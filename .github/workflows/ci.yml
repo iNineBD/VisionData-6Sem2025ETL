@@ -1,0 +1,77 @@
+name: CI-Etl
+
+on:
+    pull_request:
+        branches:
+            - 'API/**'
+            - develop
+            - 'sprint/**'
+            - main
+            - prod
+    push:
+        branches:
+            - 'API/**'
+            - develop
+            - 'sprint/**'
+            - main
+            - prod
+
+permissions:
+    contents: read
+
+jobs:
+    py-ci:
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: etl-py
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with:
+                python-version: '3.11'
+                cache: 'pip'
+
+            - name: Install deps
+              run: |
+                pip install -U pip
+                if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+                pip install black ruff pytest build
+
+            # Lint/format
+            - name: Ruff (lint)
+              run: ruff check .
+
+            - name: Tests
+              run: pytest -q --maxfail=1 --disable-warnings
+
+            - name: Build (wheel/sdist)
+              run: python -m build
+
+            - name: Pacote (tar.gz)
+              run: tar -czf etl-py.tar.gz dist/
+
+            - name: Upload artifact (py)
+              uses: actions/upload-artifact@v4
+              with:
+                name: etl-py
+                path: etl-py/etl-py.tar.gz
+    sonarqube:
+        name: SonarQube Cloud
+        runs-on: ubuntu-latest
+        steps:
+        - uses: actions/checkout@v2
+          with:
+           fetch-depth: 0
+        - name: Setup Python
+          uses: actions/setup-python@v2
+          with:
+           python-version: ${{ matrix.python }}
+        - name: Install tox and any other packages
+          run: pip install tox
+        - name: Run tox
+          run: tox -e py
+        - name: SonarQube Scan
+          uses: SonarSource/sonarqube-scan-action@v5
+          env:
+           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
