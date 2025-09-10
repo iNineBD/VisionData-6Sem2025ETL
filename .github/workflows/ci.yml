@@ -6,14 +6,12 @@ on:
       - develop
       - 'sprint-**'
       - main
-      - prod
   push:
     branches:
       - 'API-**'
       - develop
       - 'sprint-**'
       - main
-      - prod
 permissions:
   contents: read
 

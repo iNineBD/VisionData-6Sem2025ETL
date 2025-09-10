@@ -1,18 +1,13 @@
 name: CD-Etl
 
 on:
-  push:
-    branches:
-      - develop          # deploy DEV
-      - 'sprint-**'      # deploy QA/Homolog
-      - main             # deploy Staging
-      - prod             # deploy Produção (com aprovação)
-  workflow_dispatch: {}
+
+  workflow_run:
+    workflows: ["CI-Etl"]
+    types: [completed]
 
 env:
   PYTHON_VERSION: '3.11'
-  DOCKERHUB_ENABLED: 'false'          # habilite se quiser construir/push de imagem
-  IMAGE_NAME: inineapi/visiondata6sem  # ajuste conforme necessidade
   TAG: ${{ github.sha }}
 
 concurrency:
@@ -26,6 +21,7 @@ jobs:
   build-package:
     name: Build & Package (Python)
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,7 +44,7 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Lint (opcional - ignora se ferramentas não instaladas)
+      - name: Lint (optional - ignore if tools not installed)
         continue-on-error: true
         run: |
           if command -v flake8 >/dev/null 2>&1; then flake8 src || true; fi
@@ -58,18 +54,32 @@ jobs:
           python - <<'PY'
           import os, sys
           print('Python OK, version:', sys.version)
-          # Verifica se pastas principais existem
           expected=["config","entities","process","services","utils"]
           missing=[d for d in expected if not os.path.isdir(os.path.join('src',d))]
           if missing:
-              print('WARN: Pastas faltando:', missing)
+              print('WARN: Missing folders:', missing)
           PY
+
+      - name: Build package if pyproject or setup exists
+        run: |
+          if [ -f pyproject.toml ] || [ -f setup.py ]; then
+            python -m pip install build
+            python -m build
+            echo "Built via build module."
+          else
+            echo "No pyproject.toml or setup.py found. Skipping build."
+          fi
 
       - name: Empacotar fonte (tar)
         run: |
           TAR=pack-visiondata.tar.gz
-          echo "Gerando pacote ${TAR}" 
-          tar -czf ${TAR} src requirements.txt README.md || tar -czf ${TAR} src requirements.txt || tar -czf ${TAR} src
+          echo "Generating ${TAR}"
+          # prefer including dist if present, otherwise include src and metadata
+          if [ -d dist ]; then
+            tar -czf ${TAR} dist/ src requirements.txt README.md 2>/dev/null || tar -czf ${TAR} dist/ src
+          else
+            tar -czf ${TAR} src requirements.txt README.md 2>/dev/null || tar -czf ${TAR} src
+          fi
           ls -lh ${TAR}
 
       - name: Upload bundle
@@ -79,8 +89,8 @@ jobs:
           path: pack-visiondata.tar.gz
           retention-days: 7
 
-      - name: Upload wheel (opcional)
-        if: ${{ hashFiles('pyproject.toml') != '' }}
+      - name: Upload wheel (if built)
+        if: ${{ always() && (hashFiles('pyproject.toml') != '' || hashFiles('setup.py') != '') }}
         uses: actions/upload-artifact@v4
         with:
           name: python-wheel
@@ -88,26 +98,28 @@ jobs:
           retention-days: 7
 
   deploy-dev:
-    runs-on: ubuntu-latest
     needs: [build-package]
-    if: ${{ startsWith(github.ref, 'refs/heads/develop') }}
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'develop' }}
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download bundle
+        uses: actions/download-artifact@v4
         with:
           name: pack-visiondata
           path: .
-      - name: Deploy DEV (exemplo)
+      - name: Deploy DEV (example)
         run: |
-          echo "Exec: descompactar pacote e aplicar no DEV."
+          echo "Unpacking package and simulating deploy to DEV"
           tar -xzf pack-visiondata.tar.gz
           ls -R src | head -50
 
   deploy-qa:
-    runs-on: ubuntu-latest
     needs: [build-package]
-    if: ${{ startsWith(github.ref, 'refs/heads/sprint/') }}
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'sprint-') }}
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download bundle
+        uses: actions/download-artifact@v4
         with:
           name: pack-visiondata
           path: .
@@ -118,11 +130,12 @@ jobs:
           ls -R src | head -50
 
   deploy-staging:
-    runs-on: ubuntu-latest
     needs: [build-package]
-    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download bundle
+        uses: actions/download-artifact@v4
         with:
           name: pack-visiondata
           path: .
@@ -131,42 +144,3 @@ jobs:
           echo "Deploy Staging."
           tar -xzf pack-visiondata.tar.gz
           ls -R src | head -50
-
-  deploy-prod:
-    runs-on: ubuntu-latest
-    needs: [build-package]
-    if: ${{ github.ref == 'refs/heads/prod' }}
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: pack-visiondata
-          path: .
-      - name: Deploy Produção (gated)
-        run: |
-          echo "Deploy Produção APÓS APROVAÇÃO."
-          tar -xzf pack-visiondata.tar.gz
-          ls -R src | head -50
-
-  # Exemplo opcional de build & push Docker (descomente para usar)
-  # docker-build-push:
-  #   runs-on: ubuntu-latest
-  #   needs: build-package
-  #   if: ${{ env.DOCKERHUB_ENABLED == 'true' && startsWith(github.ref, 'refs/heads/sprint/') }}
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Login DockerHub
-  #       uses: docker/login-action@v3
-  #       with:
-  #         username: ${{ secrets.DOCKERHUB_USERNAME }}
-  #         password: ${{ secrets.DOCKERHUB_TOKEN }}
-  #     - name: Setup buildx
-  #       uses: docker/setup-buildx-action@v3
-  #     - name: Build & Push (multi-arch)
-  #       uses: docker/build-push-action@v6
-  #       with:
-  #         context: .
-  #         push: true
-  #         tags: |
-  #           ${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ env.TAG }}
-  #           ${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-  #         platforms: linux/amd64,linux/arm64
