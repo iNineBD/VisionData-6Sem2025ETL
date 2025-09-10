@@ -36,7 +36,7 @@ jobs:
       - name: Ruff (lint)
         run: ruff check .
       - name: Tests
-        run: pytest -q --maxfail=1 --disable-warnings
+        run: pytest src/test -q --maxfail=1 --disable-warnings
       - name: Build (wheel/sdist)
         run: python -m build
       - name: Pacote (tar.gz)
