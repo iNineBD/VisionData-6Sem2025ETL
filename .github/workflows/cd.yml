@@ -1,0 +1,172 @@
+name: CD-Etl
+
+on:
+  push:
+    branches:
+      - develop          # deploy DEV
+      - 'sprint/**'      # deploy QA/Homolog
+      - main             # deploy Staging
+      - prod             # deploy Produção (com aprovação)
+  workflow_dispatch: {}
+
+env:
+  PYTHON_VERSION: '3.11'
+  DOCKERHUB_ENABLED: 'false'          # habilite se quiser construir/push de imagem
+  IMAGE_NAME: inineapi/visiondata6sem  # ajuste conforme necessidade
+  TAG: ${{ github.sha }}
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-package:
+    name: Build & Package (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Lint (opcional - ignora se ferramentas não instaladas)
+        continue-on-error: true
+        run: |
+          if command -v flake8 >/dev/null 2>&1; then flake8 src || true; fi
+
+      - name: Quick import smoke test
+        run: |
+          python - <<'PY'
+          import os, sys
+          print('Python OK, version:', sys.version)
+          # Verifica se pastas principais existem
+          expected=["config","entities","process","services","utils"]
+          missing=[d for d in expected if not os.path.isdir(os.path.join('src',d))]
+          if missing:
+              print('WARN: Pastas faltando:', missing)
+          PY
+
+      - name: Empacotar fonte (tar)
+        run: |
+          TAR=pack-visiondata.tar.gz
+          echo "Gerando pacote ${TAR}" 
+          tar -czf ${TAR} src requirements.txt README.md || tar -czf ${TAR} src requirements.txt || tar -czf ${TAR} src
+          ls -lh ${TAR}
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: pack-visiondata
+          path: pack-visiondata.tar.gz
+          retention-days: 7
+          
+      - name: Upload wheel (opcional)
+        if: ${{ hashFiles('pyproject.toml') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheel
+          path: dist/*.whl
+          retention-days: 7
+
+  deploy-dev:
+    runs-on: ubuntu-latest
+    needs: [build-package]
+    if: ${{ startsWith(github.ref, 'refs/heads/develop') }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pack-visiondata
+          path: .
+      - name: Deploy DEV (exemplo)
+        run: |
+          echo "Exec: descompactar pacote e aplicar no DEV."
+          tar -xzf pack-visiondata.tar.gz
+          ls -R src | head -50
+
+  deploy-qa:
+    runs-on: ubuntu-latest
+    needs: [build-package]
+    if: ${{ startsWith(github.ref, 'refs/heads/sprint/') }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pack-visiondata
+          path: .
+      - name: Deploy QA (Homolog)
+        run: |
+          echo "Deploy QA/Homolog."
+          tar -xzf pack-visiondata.tar.gz
+          ls -R src | head -50
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [build-package]
+    if: ${{ github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pack-visiondata
+          path: .
+      - name: Deploy Staging
+        run: |
+          echo "Deploy Staging."
+          tar -xzf pack-visiondata.tar.gz
+          ls -R src | head -50
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: [build-package]
+    if: ${{ github.ref == 'refs/heads/prod' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pack-visiondata
+          path: .
+      - name: Deploy Produção (gated)
+        run: |
+          echo "Deploy Produção APÓS APROVAÇÃO."
+          tar -xzf pack-visiondata.tar.gz
+          ls -R src | head -50
+
+  # Exemplo opcional de build & push Docker (descomente para usar)
+  # docker-build-push:
+  #   runs-on: ubuntu-latest
+  #   needs: build-package
+  #   if: ${{ env.DOCKERHUB_ENABLED == 'true' && startsWith(github.ref, 'refs/heads/sprint/') }}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Login DockerHub
+  #       uses: docker/login-action@v3
+  #       with:
+  #         username: ${{ secrets.DOCKERHUB_USERNAME }}
+  #         password: ${{ secrets.DOCKERHUB_TOKEN }}
+  #     - name: Setup buildx
+  #       uses: docker/setup-buildx-action@v3
+  #     - name: Build & Push (multi-arch)
+  #       uses: docker/build-push-action@v6
+  #       with:
+  #         context: .
+  #         push: true
+  #         tags: |
+  #           ${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ env.TAG }}
+  #           ${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+  #         platforms: linux/amd64,linux/arm64
