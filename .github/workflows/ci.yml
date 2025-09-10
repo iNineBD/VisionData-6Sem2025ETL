@@ -35,6 +35,10 @@ jobs:
           pip install black ruff pytest build
       - name: Ruff (lint)
         run: ruff check .
+      - name: Black (format)
+        run: black --check src
+      - name: Flake8 (lint)
+        run: flake8 src
       - name: Tests
         run: pytest --cov=src --cov-report=xml src/test -q --maxfail=1 --disable-warnings
       - name: Build (wheel/sdist)
@@ -47,6 +51,7 @@ jobs:
           name: etl-py
           path: etl-py.tar.gz
   sonarqube:
+    needs: [py-ci]
     name: SonarQube Cloud
     runs-on: ubuntu-latest
     steps:
