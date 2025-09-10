@@ -36,7 +36,7 @@ jobs:
       - name: Ruff (lint)
         run: ruff check .
       - name: Tests
-        run: pytest src/test -q --maxfail=1 --disable-warnings
+        run: pytest --cov=src --cov-report=xml src/test -q --maxfail=1 --disable-warnings
       - name: Build (wheel/sdist)
         run: python -m build
       - name: Pacote (tar.gz)
@@ -49,13 +49,19 @@ jobs:
   sonarqube:
     name: SonarQube Cloud
     runs-on: ubuntu-latest
-    needs:
-      - py-ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v2
         with:
           fetch-depth: 0
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install tox and any other packages
+        run: pip install tox
+      - name: Run tox
+        run: tox -e py
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
         env:
-          SONAR_TOKEN: '${{ secrets.SONAR_TOKEN }}'
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
