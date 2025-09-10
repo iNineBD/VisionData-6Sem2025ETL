@@ -2,9 +2,9 @@ name: CI-Etl
 'on':
   pull_request:
     branches:
-      - API/**
+      - 'API/**'
       - develop
-      - sprint/**
+      - 'sprint/**'
       - main
       - prod
     types: [opened, synchronize, reopened]
