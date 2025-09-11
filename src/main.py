@@ -1,8 +1,6 @@
 from schedule import run_pending
 from process.scheduler import start_etl
-import time
 from config.logger import setup_logger
-import os
 
 logger = setup_logger(__name__)
 
