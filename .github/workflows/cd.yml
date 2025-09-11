@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - develop          # deploy DEV
-      - 'sprint/**'      # deploy QA/Homolog
+      - 'sprint-**'      # deploy QA/Homolog
       - main             # deploy Staging
       - prod             # deploy Produção (com aprovação)
   workflow_dispatch: {}

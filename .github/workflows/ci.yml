@@ -2,16 +2,16 @@ name: CI-Etl
 on:
   pull_request:
     branches:
-      - 'API/**'
+      - 'API-**'
       - develop
-      - 'sprint/**'
+      - 'sprint-**'
       - main
       - prod
   push:
     branches:
       - 'API-**'
       - develop
-      - 'sprint/**'
+      - 'sprint-**'
       - main
       - prod
 permissions:
