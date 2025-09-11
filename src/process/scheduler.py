@@ -16,8 +16,9 @@ def start_etl():
     Agora ela executa nosso processo de ETL baseado em classe.
     """
     # 2. Crie uma instância da classe e execute o processo
-    etl_job = EtlProcessor() # O log registrará a chamada de __init__
-    etl_job.execute()        # O log registrará execute, extract, transform e load
+    etl_job = EtlProcessor()  # O log registrará a chamada de __init__
+    etl_job.execute()  # O log registrará execute, extract, transform e load
+
 
 def scheduler():
     """

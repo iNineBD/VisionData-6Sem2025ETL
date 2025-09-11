@@ -7,11 +7,12 @@ from config.elastic_client import ElasticClient
 
 logger = setup_logger(__name__)
 
+
 class EtlProcessor:
     def __init__(self):
         self.db_connector = DBConnector()
         self.elastic_client = ElasticClient()
-        self.transformed_data = None # Para guardar os dados transformados
+        self.transformed_data = None  # Para guardar os dados transformados
 
     def extract_data(self):
         logger.info("Extraindo dados específicos")
@@ -33,7 +34,9 @@ class EtlProcessor:
             doc_id = self.transformed_data.get("id")
             if doc_id:
                 # <-- 3. Chame o método de upsert
-                self.elastic_client.upsert_document(doc_id=doc_id, data=self.transformed_data)
+                self.elastic_client.upsert_document(
+                    doc_id=doc_id, data=self.transformed_data
+                )
             else:
                 logger.error("Não foi possível carregar os dados: ID não encontrado.")
         time.sleep(1)
@@ -42,5 +45,6 @@ class EtlProcessor:
         extracted = self.extract_data()
         self.transform_data(extracted)
         self.load_data()
+
 
 aspectlib.weave(EtlProcessor, log_execution)
