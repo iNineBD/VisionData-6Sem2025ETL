@@ -9,7 +9,7 @@ on:
       - prod
   push:
     branches:
-      - 'API/**'
+      - 'API-**'
       - develop
       - 'sprint/**'
       - main
