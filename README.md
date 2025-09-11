@@ -75,5 +75,5 @@ The project uses two environment configuration files:
 - Pre-commit hooks are configured to enforce commit message patterns and code style.
 - Logging is handled via file and/or console as configured in the environment variables.
 - ETL scheduling is managed via the `schedule` library and can be customized using the `SCHEDULE_TIME` variable.
-- Elasticsearch integration is available for logging and monitoring.
+- Elasticsearch integration is used as a database for storing and retrieving data, as well as for logging and monitoring.
 - Database parameters must be set in the `.env` file for full functionality.

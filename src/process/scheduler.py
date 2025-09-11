@@ -1,4 +1,4 @@
-from scheduler import every
+from schedule import every
 from config.aop_logging import log_execution
 import aspectlib
 import os
@@ -35,4 +35,5 @@ aspectlib.weave(scheduler, log_execution)
 
 # Agendar para cada horário definido na variável de ambiente
 for horario in schedule_times:
-    every().day.at(horario.strip()).do(scheduler)
+    every(5).seconds.do(scheduler)
+    # every().day.at(horario.strip()).do(scheduler)
