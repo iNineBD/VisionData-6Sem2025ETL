@@ -89,4 +89,8 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+<<<<<<< HEAD
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+=======
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+>>>>>>> c97049a (API-17-refactor: adjustment in the elastic connection and sonar adjustments)

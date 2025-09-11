@@ -27,7 +27,6 @@ class ConsoleFormatter(logging.Formatter):
         # Converte o dicionário final para uma string JSON.
         return json.dumps(log_dict, ensure_ascii=False)
 
-
 def setup_logger(logger_name):
     logger = logging.getLogger(logger_name)
     logger.setLevel(os.getenv("LOGGER_LEVEL", "INFO"))
