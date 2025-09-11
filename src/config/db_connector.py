@@ -12,7 +12,7 @@ class DBConnector:
         self.host = os.getenv("DB_HOST")
         self.user = os.getenv("DB_USER")
         self.password = os.getenv("DB_PASSWORD")
-        self.port = os.getenv("DB_PORT", "1433")  # Porta padrão para SQL Server
+        self.port = os.getenv("DB_PORT", "1433")
 
         self.connection = None
         self.cursor = None
