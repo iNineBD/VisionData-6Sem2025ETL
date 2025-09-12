@@ -12,8 +12,8 @@ class EtlProcessor:
     def __init__(self):
         self.db_connector = DBConnector()
         self.elastic_client = ElasticClient()
-        self.transformed_data = None  
-        
+        self.transformed_data = None
+
     def extract_data(self):
         logger.info("Extraindo dados específicos")
         time.sleep(1)

@@ -11,7 +11,7 @@ INDEX_MAPPING = {
             "title": {
                 "type": "text",
                 "analyzer": "brazilian",
-                "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}
+                "fields": {"keyword": {"type": "keyword", "ignore_above": 256}},
             },
             "description": {"type": "text", "analyzer": "brazilian"},
             "channel": {"type": "keyword"},
@@ -21,9 +21,18 @@ INDEX_MAPPING = {
             "priority": {"type": "keyword"},
             "dates": {
                 "properties": {
-                    "created_at": {"type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis"},
-                    "first_response_at": {"type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis"},
-                    "closed_at": {"type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis"}
+                    "created_at": {
+                        "type": "date",
+                        "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis",
+                    },
+                    "first_response_at": {
+                        "type": "date",
+                        "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis",
+                    },
+                    "closed_at": {
+                        "type": "date",
+                        "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis",
+                    },
                 }
             },
             "company": {
@@ -32,10 +41,10 @@ INDEX_MAPPING = {
                     "name": {
                         "type": "text",
                         "analyzer": "brazilian",
-                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}
+                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}},
                     },
                     "cnpj": {"type": "keyword"},
-                    "segment": {"type": "keyword"}
+                    "segment": {"type": "keyword"},
                 }
             },
             "created_by_user": {
@@ -44,12 +53,12 @@ INDEX_MAPPING = {
                     "full_name": {
                         "type": "text",
                         "analyzer": "brazilian",
-                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}
+                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}},
                     },
                     "email": {"type": "keyword"},
                     "phone": {"type": "keyword"},
                     "cpf": {"type": "keyword"},
-                    "is_vip": {"type": "boolean"}
+                    "is_vip": {"type": "boolean"},
                 }
             },
             "assigned_agent": {
@@ -58,10 +67,10 @@ INDEX_MAPPING = {
                     "full_name": {
                         "type": "text",
                         "analyzer": "brazilian",
-                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}
+                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}},
                     },
                     "email": {"type": "keyword"},
-                    "department": {"type": "keyword"}
+                    "department": {"type": "keyword"},
                 }
             },
             "product": {
@@ -70,10 +79,10 @@ INDEX_MAPPING = {
                     "name": {
                         "type": "text",
                         "analyzer": "brazilian",
-                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}
+                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}},
                     },
                     "code": {"type": "keyword"},
-                    "description": {"type": "text", "analyzer": "brazilian"}
+                    "description": {"type": "text", "analyzer": "brazilian"},
                 }
             },
             "category": {
@@ -82,8 +91,8 @@ INDEX_MAPPING = {
                     "name": {
                         "type": "text",
                         "analyzer": "brazilian",
-                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}
-                    }
+                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}},
+                    },
                 }
             },
             "subcategory": {
@@ -92,8 +101,8 @@ INDEX_MAPPING = {
                     "name": {
                         "type": "text",
                         "analyzer": "brazilian",
-                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}
-                    }
+                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}},
+                    },
                 }
             },
             "attachments": {
@@ -103,13 +112,16 @@ INDEX_MAPPING = {
                     "filename": {
                         "type": "text",
                         "analyzer": "brazilian",
-                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}
+                        "fields": {"keyword": {"type": "keyword", "ignore_above": 256}},
                     },
                     "mime_type": {"type": "keyword"},
                     "size_bytes": {"type": "long"},
                     "storage_path": {"type": "keyword", "index": False},
-                    "uploaded_at": {"type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis"}
-                }
+                    "uploaded_at": {
+                        "type": "date",
+                        "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis",
+                    },
+                },
             },
             "tags": {"type": "keyword"},
             "status_history": {
@@ -117,10 +129,13 @@ INDEX_MAPPING = {
                 "properties": {
                     "from_status": {"type": "keyword"},
                     "to_status": {"type": "keyword"},
-                    "changed_at": {"type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis"},
+                    "changed_at": {
+                        "type": "date",
+                        "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis",
+                    },
                     "changed_by_agent_id": {"type": "keyword"},
-                    "changed_by_agent_name": {"type": "text", "analyzer": "brazilian"}
-                }
+                    "changed_by_agent_name": {"type": "text", "analyzer": "brazilian"},
+                },
             },
             "audit_logs": {
                 "type": "nested",
@@ -129,19 +144,22 @@ INDEX_MAPPING = {
                     "entity_id": {"type": "keyword"},
                     "operation": {"type": "keyword"},
                     "performed_by": {"type": "keyword"},
-                    "performed_at": {"type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis"},
-                    "details": {"type": "object", "enabled": False}
-                }
+                    "performed_at": {
+                        "type": "date",
+                        "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis",
+                    },
+                    "details": {"type": "object", "enabled": False},
+                },
             },
             "sla_metrics": {
                 "properties": {
                     "first_response_time_minutes": {"type": "integer"},
                     "resolution_time_minutes": {"type": "integer"},
                     "first_response_sla_breached": {"type": "boolean"},
-                    "resolution_sla_breached": {"type": "boolean"}
+                    "resolution_sla_breached": {"type": "boolean"},
                 }
             },
-            "search_text": {"type": "text", "analyzer": "brazilian"}
+            "search_text": {"type": "text", "analyzer": "brazilian"},
         }
     },
     "settings": {
@@ -151,16 +169,22 @@ INDEX_MAPPING = {
             "analyzer": {
                 "brazilian": {
                     "tokenizer": "standard",
-                    "filter": ["lowercase", "brazilian_stop", "brazilian_stemmer", "asciifolding"]
+                    "filter": [
+                        "lowercase",
+                        "brazilian_stop",
+                        "brazilian_stemmer",
+                        "asciifolding",
+                    ],
                 }
             },
             "filter": {
                 "brazilian_stop": {"type": "stop", "stopwords": "_brazilian_"},
-                "brazilian_stemmer": {"type": "stemmer", "language": "brazilian"}
-            }
-        }
-    }
+                "brazilian_stemmer": {"type": "stemmer", "language": "brazilian"},
+            },
+        },
+    },
 }
+
 
 class ElasticClient:
 
@@ -179,19 +203,22 @@ class ElasticClient:
         self._ensure_index()
 
     def _ensure_index(self):
-            # Garante que o nome do índice está definido
-            if not self.elastic_index:
-                # 2. Use o logger para mensagens de erro
-                logger.error("[ElasticClient] Variável de ambiente ELASTICSEARCH_INDEX não definida. Índice não será criado.")
-                return
-            # Cria o índice com o mapeamento se não existir
-            if not self.es.indices.exists(index=self.elastic_index):
-                # 3. Use o logger para mensagens de informação
-                logger.info(f"[ElasticClient] Índice '{self.elastic_index}' não existe. Criando...")
-                self.es.indices.create(index=self.elastic_index, body=INDEX_MAPPING)
-            else:
-                logger.info(f"[ElasticClient] Índice '{self.elastic_index}' já existe.")
-
+        # Garante que o nome do índice está definido
+        if not self.elastic_index:
+            # 2. Use o logger para mensagens de erro
+            logger.error(
+                "[ElasticClient] Variável de ambiente ELASTICSEARCH_INDEX não definida. Índice não será criado."
+            )
+            return
+        # Cria o índice com o mapeamento se não existir
+        if not self.es.indices.exists(index=self.elastic_index):
+            # 3. Use o logger para mensagens de informação
+            logger.info(
+                f"[ElasticClient] Índice '{self.elastic_index}' não existe. Criando..."
+            )
+            self.es.indices.create(index=self.elastic_index, body=INDEX_MAPPING)
+        else:
+            logger.info(f"[ElasticClient] Índice '{self.elastic_index}' já existe.")
 
     def upsert_document(self, doc_id, data):
         """

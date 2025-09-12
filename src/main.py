@@ -7,7 +7,7 @@ logger = setup_logger(__name__)
 
 
 if __name__ == "__main__":
-    
+
     elastic_client = ElasticClient()
 
     start_etl()
