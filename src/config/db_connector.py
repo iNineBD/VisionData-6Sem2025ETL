@@ -17,14 +17,6 @@ class DBConnector:
         self.connection = None
         self.cursor = None
 
-    @contextmanager
-    def db_connection(self):
-        try:
-            self.connect()
-            yield
-        finally:
-            self.close()
-
     def connect(self):
         try:
             connection_string = (
@@ -52,30 +44,28 @@ class DBConnector:
 
     # Método para execução de queries SQLs customizados
     def execute_query(self, query, params=None):
-        with self.db_connection():
-            try:
-                self.cursor.execute(query, params)
-                self.connection.commit()
-            except Exception as e:
-                logger.error(
-                    f"Erro ao executar query: {query}. Parâmetros: {params}. Erro: {str(e)}"
-                )
-                self.connection.rollback()
+        try:
+            self.cursor.execute(query, params)
+            self.connection.commit()
+        except Exception as e:
+            logger.error(
+                f"Erro ao executar query: {query}. Parâmetros: {params}. Erro: {str(e)}"
+            )
+            self.connection.rollback()
 
     # Método para buscar dados (SELECT)
     def fetch_all(self, query, params=None):
-        with self.db_connection():
-            try:
-                if params:
-                    self.cursor.execute(query, params)
-                else:
-                    self.cursor.execute(query)
-                results = self.cursor.fetchall()
-                return results
-            except Exception as e:
-                logger.error(
-                    f"Erro ao executar query: {query}. Parâmetros: {params}. Erro: {str(e)}"
-                )
+        try:
+            if params:
+                self.cursor.execute(query, params)
+            else:
+                self.cursor.execute(query)
+            results = self.cursor.fetchall()
+            return results
+        except Exception as e:
+            logger.error(
+                f"Erro ao executar query: {query}. Parâmetros: {params}. Erro: {str(e)}"
+            )
 
     # Métodos CRUD básicos
     def select(self, table, columns="*", condition=None):
