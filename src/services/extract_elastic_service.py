@@ -66,7 +66,7 @@ class ExtractElasticService:
 
         return all_results
 
-    def get_tickets_base_data(
+    def _get_tickets_base_data(
         self, ticket_ids: Optional[List[str]] = None, limit: Optional[int] = None
     ) -> List[Dict]:
         """
@@ -150,7 +150,7 @@ class ExtractElasticService:
         columns = [column[0] for column in results[0].cursor_description]
         return [dict(zip(columns, row)) for row in results]
 
-    def get_attachments(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
+    def _get_attachments(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
         """Extrai anexos dos tickets especificados."""
         if not ticket_ids:
             return {}
@@ -186,7 +186,7 @@ class ExtractElasticService:
 
         return attachments_by_ticket
 
-    def get_tags(self, ticket_ids: List[str]) -> Dict[str, List[str]]:
+    def _get_tags(self, ticket_ids: List[str]) -> Dict[str, List[str]]:
         """Extrai tags dos tickets especificados"""
         if not ticket_ids:
             return {}
@@ -218,7 +218,7 @@ class ExtractElasticService:
 
         return tags_by_ticket
 
-    def get_status_history(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
+    def _get_status_history(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
         """Extrai histórico de status dos tickets especificados"""
         if not ticket_ids:
             return {}
@@ -254,7 +254,7 @@ class ExtractElasticService:
 
         return history_by_ticket
 
-    def get_audit_logs(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
+    def _get_audit_logs(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
         """Extrai logs de auditoria dos tickets especificados."""
         if not ticket_ids:
             return {}
@@ -298,7 +298,7 @@ class ExtractElasticService:
         Extrai todos os dados necessários dos tickets
         """
         # Extrai dados principais
-        tickets_data = self.get_tickets_base_data(ticket_ids, limit)
+        tickets_data = self._get_tickets_base_data(ticket_ids, limit)
 
         if not tickets_data:
             return {
@@ -313,10 +313,10 @@ class ExtractElasticService:
         extracted_ticket_ids = [str(ticket["ticket_id"]) for ticket in tickets_data]
 
         # Extrai dados relacionados
-        attachments = self.get_attachments(extracted_ticket_ids)
-        tags = self.get_tags(extracted_ticket_ids)
-        status_history = self.get_status_history(extracted_ticket_ids)
-        audit_logs = self.get_audit_logs(extracted_ticket_ids)
+        attachments = self._get_attachments(extracted_ticket_ids)
+        tags = self._get_tags(extracted_ticket_ids)
+        status_history = self._get_status_history(extracted_ticket_ids)
+        audit_logs = self._get_audit_logs(extracted_ticket_ids)
 
         return {
             "tickets": tickets_data,
