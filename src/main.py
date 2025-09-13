@@ -1,3 +1,4 @@
+# ruff: noqa: F401
 from schedule import run_pending
 from process.scheduler import scheduler
 from config.logger import setup_logger
