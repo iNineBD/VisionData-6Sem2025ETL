@@ -66,13 +66,14 @@ class DBConnector:
     def fetch_all(self, query, params=None):
         with self.db_connection():
             try:
-                self.cursor.execute(query, params)
+                if params:
+                    self.cursor.execute(query, params)
+                else:
+                    self.cursor.execute(query)
                 results = self.cursor.fetchall()
                 return results
             except Exception as e:
-                logger.error(
-                    f"Erro ao executar query: {query}. Parâmetros: {params}. Erro: {str(e)}"
-                )
+                logger.error(f"Erro ao executar query: {query}. Parâmetros: {params}. Erro: {str(e)}")
 
     # Métodos CRUD básicos
     def select(self, table, columns="*", condition=None):
