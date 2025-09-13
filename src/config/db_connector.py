@@ -1,6 +1,5 @@
 import os
 import pyodbc
-from contextlib import contextmanager
 from .logger import setup_logger
 
 logger = setup_logger(__name__)
