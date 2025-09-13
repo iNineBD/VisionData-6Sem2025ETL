@@ -1,7 +1,14 @@
-from config.aop_logging import log_execution
-import aspectlib
-from typing import Dict, List, Optional, Any
 import math
+from datetime import datetime
+from typing import Dict, List, Optional, Any
+import json
+
+import aspectlib
+
+from config.aop_logging import log_execution
+from config.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 
 class ExtractElasticService:
@@ -12,40 +19,51 @@ class ExtractElasticService:
         Args:
             db_connection: Instância da classe DBConnector
         """
+
         self.db = db_connection
 
-    def _execute_in_chunks(self, base_query, id_list, chunk_size=2000):
+    def _execute_in_chunks(
+        self, base_query: str, ids: list, chunk_size: int = 1000
+    ) -> list:
         """
         Executa uma consulta SQL com uma cláusula IN, dividindo-a em lotes menores
         para evitar o limite de parâmetros do SQL Server.
         """
-        if not id_list:
+        if not ids:
             return []
 
         all_results = []
-        num_chunks = int(math.ceil(len(id_list) / float(chunk_size)))
+        # Converte todos os IDs para string para consistência
+        str_ids = [str(i) for i in ids]
+
+        num_chunks = int(math.ceil(len(str_ids) / float(chunk_size)))
+        logger.info(
+            f"Dividindo {len(str_ids)} IDs em {num_chunks} lotes de {chunk_size}."
+        )
 
         for i in range(num_chunks):
             start_index = i * chunk_size
             end_index = (i + 1) * chunk_size
-            chunk_ids = id_list[start_index:end_index]
+            chunk_ids = str_ids[start_index:end_index]
 
             if not chunk_ids:
                 continue
 
-            placeholders = ", ".join(["?"] * len(chunk_ids))
+            placeholders = ",".join(["?"] * len(chunk_ids))
+
+            # Adiciona os placeholders dentro de parênteses
             query = f"{base_query} ({placeholders})"
 
             try:
+                # Log da execução da query do chunk
+                logger.debug(
+                    f"Executando lote {i+1}/{num_chunks} com {len(chunk_ids)} IDs."
+                )
                 results_chunk = self.db.fetch_all(query, chunk_ids)
                 if results_chunk:
                     all_results.extend(results_chunk)
             except Exception as e:
-                # É uma boa prática logar o erro aqui
-                print(f"Error executing chunk {i+1}/{num_chunks}: {e}")
-                # Dependendo da necessidade, você pode querer parar a execução
-                # ou apenas continuar para o próximo lote.
-                # Aqui, vamos continuar, mas sem adicionar resultados deste lote.
+                logger.error(f"Erro ao executar o lote {i+1}/{num_chunks}: {e}")
                 pass
 
         return all_results
@@ -54,14 +72,7 @@ class ExtractElasticService:
         self, ticket_ids: Optional[List[str]] = None, limit: Optional[int] = None
     ) -> List[Dict]:
         """
-        Extrai dados principais dos tickets com relacionamentos básicos
-
-        Args:
-            ticket_ids: Lista de IDs específicos de tickets (opcional)
-            limit: Limite de registros (opcional)
-
-        Returns:
-            Lista de dicionários com dados básicos dos tickets
+        Extrai dados principais dos tickets com relacionamentos básicos.
         """
         select_fields = """
             t.TicketId as ticket_id,
@@ -109,47 +120,39 @@ class ExtractElasticService:
             sla.ResolutionMins as sla_resolution_mins
         """
 
-        if limit:
-            base_query = f"SELECT TOP {limit} {select_fields} FROM Tickets t "
-        else:
-            base_query = f"SELECT {select_fields} FROM Tickets t "
+        from_clause = """
+            FROM Tickets t
+            LEFT JOIN Companies c ON t.CompanyId = c.CompanyId
+            LEFT JOIN Users u ON t.CreatedByUserId = u.UserId
+            LEFT JOIN Agents a ON t.AssignedAgentId = a.AgentId
+            LEFT JOIN Products p ON t.ProductId = p.ProductId
+            LEFT JOIN Categories cat ON t.CategoryId = cat.CategoryId
+            LEFT JOIN Subcategories sub ON t.SubcategoryId = sub.SubcategoryId
+            LEFT JOIN SLA_Plans sla ON t.SLAPlanId = sla.SLAPlanId
+        """
 
-        base_query += "LEFT JOIN Companies c ON t.CompanyId = c.CompanyId "
-        base_query += "LEFT JOIN Users u ON t.CreatedByUserId = u.UserId "
-        base_query += "LEFT JOIN Agents a ON t.AssignedAgentId = a.AgentId "
-        base_query += "LEFT JOIN Products p ON t.ProductId = p.ProductId "
-        base_query += "LEFT JOIN Categories cat ON t.CategoryId = cat.CategoryId "
-        base_query += (
-            "LEFT JOIN Subcategories sub ON t.SubcategoryId = sub.SubcategoryId "
-        )
-        base_query += "LEFT JOIN SLA_Plans sla ON t.SLAPlanId = sla.SLAPlanId "
-
-        # Adiciona filtros
-        conditions = []
-        params = []
-
+        results = []
         if ticket_ids:
-            placeholders = ",".join(["?"] * len(ticket_ids))  # SQL Server usa ?
-            conditions.append(f"t.TicketId IN ({placeholders})")
-            params.extend(ticket_ids)
-
-        if conditions:
-            base_query += " WHERE " + " AND ".join(conditions)
-        base_query += " ORDER BY t.CreatedAt DESC"
-
-        # Usa o método fetch_all da sua classe DBConnector
-        results = self.db.fetch_all(base_query, params if params else None)
+            # Constrói a consulta base para o chunking
+            base_query = f"SELECT {select_fields} {from_clause} WHERE t.TicketId IN"
+            results = self._execute_in_chunks(base_query, ticket_ids)
+        elif limit:
+            # Constrói a consulta para o caso de 'limit' sem IDs específicos
+            query = f"SELECT TOP {limit} {select_fields} {from_clause} ORDER BY t.CreatedAt DESC"
+            results = self.db.fetch_all(query)
+        else:
+            # Constrói a consulta para obter todos os tickets
+            query = f"SELECT {select_fields} {from_clause} ORDER BY t.CreatedAt DESC"
+            results = self.db.fetch_all(query)
 
         if not results:
             return []
 
         # Converte pyodbc.Row para dicionários
-        columns = (
-            [column[0] for column in results[0].cursor_description] if results else []
-        )
+        columns = [column[0] for column in results[0].cursor_description]
         return [dict(zip(columns, row)) for row in results]
 
-    def get_attachments(self, ticket_ids: list[str]) -> dict[str, list[dict]]:
+    def get_attachments(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
         """Extrai anexos dos tickets especificados."""
         if not ticket_ids:
             return {}
@@ -166,26 +169,27 @@ class ExtractElasticService:
         FROM Attachments
         WHERE TicketId IN
         """
-
         results = self._execute_in_chunks(base_query, ticket_ids)
 
         if not results:
             return {}
 
+        # Converte para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         attachments_data = [dict(zip(columns, row)) for row in results]
 
+        # Agrupa por ticket_id
         attachments_by_ticket = {}
         for attachment in attachments_data:
-            ticket_id = attachment.pop("ticket_id")
+            ticket_id = str(attachment.pop("ticket_id"))
             if ticket_id not in attachments_by_ticket:
                 attachments_by_ticket[ticket_id] = []
             attachments_by_ticket[ticket_id].append(attachment)
 
         return attachments_by_ticket
 
-    def get_tags(self, ticket_ids: list[str]) -> dict[str, list[str]]:
-        """Extrai tags dos tickets especificados."""
+    def get_tags(self, ticket_ids: List[str]) -> Dict[str, List[str]]:
+        """Extrai tags dos tickets especificados"""
         if not ticket_ids:
             return {}
 
@@ -197,26 +201,27 @@ class ExtractElasticService:
         JOIN Tags t ON tt.TagId = t.TagId
         WHERE tt.TicketId IN
         """
-
         results = self._execute_in_chunks(base_query, ticket_ids)
 
         if not results:
             return {}
 
+        # Converte para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         tags_data = [dict(zip(columns, row)) for row in results]
 
+        # Agrupa por ticket_id
         tags_by_ticket = {}
         for tag in tags_data:
-            ticket_id = tag["ticket_id"]
+            ticket_id = str(tag["ticket_id"])
             if ticket_id not in tags_by_ticket:
                 tags_by_ticket[ticket_id] = []
             tags_by_ticket[ticket_id].append(tag["tag_name"])
 
         return tags_by_ticket
 
-    def get_status_history(self, ticket_ids: list[str]) -> dict[str, list[dict]]:
-        """Extrai histórico de status dos tickets especificados."""
+    def get_status_history(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
+        """Extrai histórico de status dos tickets especificados"""
         if not ticket_ids:
             return {}
 
@@ -232,25 +237,26 @@ class ExtractElasticService:
         LEFT JOIN Agents a ON tsh.ChangedByAgentId = a.AgentId
         WHERE tsh.TicketId IN
         """
-
         results = self._execute_in_chunks(base_query, ticket_ids)
 
         if not results:
             return {}
 
+        # Converte para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         history_data = [dict(zip(columns, row)) for row in results]
 
+        # Agrupa por ticket_id
         history_by_ticket = {}
         for history in history_data:
-            ticket_id = history.pop("ticket_id")
+            ticket_id = str(history.pop("ticket_id"))
             if ticket_id not in history_by_ticket:
                 history_by_ticket[ticket_id] = []
             history_by_ticket[ticket_id].append(history)
 
         return history_by_ticket
 
-    def get_audit_logs(self, ticket_ids: list[str]) -> dict[str, list[dict]]:
+    def get_audit_logs(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
         """Extrai logs de auditoria dos tickets especificados."""
         if not ticket_ids:
             return {}
@@ -268,21 +274,19 @@ class ExtractElasticService:
         FROM AuditLogs al
         WHERE al.EntityType = 'ticket' AND al.EntityId IN
         """
-
-        # Usando a função _execute_in_chunks para buscar os dados
         results = self._execute_in_chunks(base_query, ticket_ids)
 
         if not results:
             return {}
 
-        # Converte pyodbc.Row para dicionários
+        # Converte para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         audit_data = [dict(zip(columns, row)) for row in results]
 
         # Agrupa por ticket_id
         audit_by_ticket = {}
         for audit in audit_data:
-            ticket_id = audit.pop("ticket_id")
+            ticket_id = str(audit.pop("ticket_id"))
             if ticket_id not in audit_by_ticket:
                 audit_by_ticket[ticket_id] = []
             audit_by_ticket[ticket_id].append(audit)
@@ -294,14 +298,6 @@ class ExtractElasticService:
     ) -> Dict[str, Any]:
         """
         Extrai todos os dados necessários dos tickets
-
-        Returns:
-            Dicionário com:
-            - tickets: dados principais dos tickets
-            - attachments: anexos agrupados por ticket_id
-            - tags: tags agrupadas por ticket_id
-            - status_history: histórico agrupado por ticket_id
-            - audit_logs: logs agrupados por ticket_id
         """
         # Extrai dados principais
         tickets_data = self.get_tickets_base_data(ticket_ids, limit)
