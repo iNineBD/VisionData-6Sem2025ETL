@@ -3,17 +3,20 @@ from config.aop_logging import log_execution
 import aspectlib
 from typing import Dict, List, Optional, Any
 
+
 class ExtractElasticService:
     """Serviço responsável por extrair dados dos tickets do banco de dados"""
-    
+
     def __init__(self, db_connection):
         """
         Args:
             db_connection: Instância da classe DBConnector
         """
         self.db = db_connection
-    
-    def get_tickets_base_data(self, ticket_ids: Optional[List[str]] = None, limit: Optional[int] = None) -> List[Dict]:
+
+    def get_tickets_base_data(
+        self, ticket_ids: Optional[List[str]] = None, limit: Optional[int] = None
+    ) -> List[Dict]:
         """
         Extrai dados principais dos tickets com relacionamentos básicos
 
@@ -80,7 +83,9 @@ class ExtractElasticService:
         base_query += "LEFT JOIN Agents a ON t.AssignedAgentId = a.AgentId "
         base_query += "LEFT JOIN Products p ON t.ProductId = p.ProductId "
         base_query += "LEFT JOIN Categories cat ON t.CategoryId = cat.CategoryId "
-        base_query += "LEFT JOIN Subcategories sub ON t.SubcategoryId = sub.SubcategoryId "
+        base_query += (
+            "LEFT JOIN Subcategories sub ON t.SubcategoryId = sub.SubcategoryId "
+        )
         base_query += "LEFT JOIN SLA_Plans sla ON t.SLAPlanId = sla.SLAPlanId "
 
         # Adiciona filtros
@@ -88,7 +93,7 @@ class ExtractElasticService:
         params = []
 
         if ticket_ids:
-            placeholders = ','.join(['?'] * len(ticket_ids))  # SQL Server usa ?
+            placeholders = ",".join(["?"] * len(ticket_ids))  # SQL Server usa ?
             conditions.append(f"t.TicketId IN ({placeholders})")
             params.extend(ticket_ids)
 
@@ -103,15 +108,17 @@ class ExtractElasticService:
             return []
 
         # Converte pyodbc.Row para dicionários
-        columns = [column[0] for column in results[0].cursor_description] if results else []
+        columns = (
+            [column[0] for column in results[0].cursor_description] if results else []
+        )
         return [dict(zip(columns, row)) for row in results]
-        
+
     def get_attachments(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
         """Extrai anexos dos tickets especificados"""
         if not ticket_ids:
             return {}
-        
-        placeholders = ','.join(['?'] * len(ticket_ids))
+
+        placeholders = ",".join(["?"] * len(ticket_ids))
         query = f"""
         SELECT 
             AttachmentId as id,
@@ -125,32 +132,32 @@ class ExtractElasticService:
         WHERE TicketId IN ({placeholders})
         ORDER BY UploadedAt
         """
-        
+
         results = self.db.fetch_all(query, ticket_ids)
-        
+
         if not results:
             return {}
-        
+
         # Converte para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         attachments_data = [dict(zip(columns, row)) for row in results]
-        
+
         # Agrupa por ticket_id
         attachments_by_ticket = {}
         for attachment in attachments_data:
-            ticket_id = attachment.pop('ticket_id')
+            ticket_id = attachment.pop("ticket_id")
             if ticket_id not in attachments_by_ticket:
                 attachments_by_ticket[ticket_id] = []
             attachments_by_ticket[ticket_id].append(attachment)
-        
+
         return attachments_by_ticket
-    
+
     def get_tags(self, ticket_ids: List[str]) -> Dict[str, List[str]]:
         """Extrai tags dos tickets especificados"""
         if not ticket_ids:
             return {}
-        
-        placeholders = ','.join(['?'] * len(ticket_ids))
+
+        placeholders = ",".join(["?"] * len(ticket_ids))
         query = f"""
         SELECT 
             tt.TicketId as ticket_id,
@@ -160,32 +167,32 @@ class ExtractElasticService:
         WHERE tt.TicketId IN ({placeholders})
         ORDER BY t.Name
         """
-        
+
         results = self.db.fetch_all(query, ticket_ids)
-        
+
         if not results:
             return {}
-        
+
         # Converte para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         tags_data = [dict(zip(columns, row)) for row in results]
-        
+
         # Agrupa por ticket_id
         tags_by_ticket = {}
         for tag in tags_data:
-            ticket_id = tag['ticket_id']
+            ticket_id = tag["ticket_id"]
             if ticket_id not in tags_by_ticket:
                 tags_by_ticket[ticket_id] = []
-            tags_by_ticket[ticket_id].append(tag['tag_name'])
-        
+            tags_by_ticket[ticket_id].append(tag["tag_name"])
+
         return tags_by_ticket
-    
+
     def get_status_history(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
         """Extrai histórico de status dos tickets especificados"""
         if not ticket_ids:
             return {}
-        
-        placeholders = ','.join(['?'] * len(ticket_ids))
+
+        placeholders = ",".join(["?"] * len(ticket_ids))
         query = f"""
         SELECT 
             tsh.TicketId as ticket_id,
@@ -199,32 +206,32 @@ class ExtractElasticService:
         WHERE tsh.TicketId IN ({placeholders})
         ORDER BY tsh.ChangedAt
         """
-        
+
         results = self.db.fetch_all(query, ticket_ids)
-        
+
         if not results:
             return {}
-        
+
         # Converte para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         history_data = [dict(zip(columns, row)) for row in results]
-        
+
         # Agrupa por ticket_id
         history_by_ticket = {}
         for history in history_data:
-            ticket_id = history.pop('ticket_id')
+            ticket_id = history.pop("ticket_id")
             if ticket_id not in history_by_ticket:
                 history_by_ticket[ticket_id] = []
             history_by_ticket[ticket_id].append(history)
-        
+
         return history_by_ticket
-    
+
     def get_audit_logs(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
         """Extrai logs de auditoria dos tickets especificados"""
         if not ticket_ids:
             return {}
-        
-        placeholders = ','.join(['?'] * len(ticket_ids))
+
+        placeholders = ",".join(["?"] * len(ticket_ids))
         query = f"""
         SELECT 
             al.EntityId as ticket_id,
@@ -239,30 +246,32 @@ class ExtractElasticService:
         WHERE al.EntityType = 'ticket' AND al.EntityId IN ({placeholders})
         ORDER BY al.PerformedAt
         """
-        
+
         results = self.db.fetch_all(query, ticket_ids)
-        
+
         if not results:
             return {}
-        
+
         # Converte para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         audit_data = [dict(zip(columns, row)) for row in results]
-        
+
         # Agrupa por ticket_id
         audit_by_ticket = {}
         for audit in audit_data:
-            ticket_id = audit.pop('ticket_id')
+            ticket_id = audit.pop("ticket_id")
             if ticket_id not in audit_by_ticket:
                 audit_by_ticket[ticket_id] = []
             audit_by_ticket[ticket_id].append(audit)
-        
+
         return audit_by_ticket
-    
-    def extract_complete_tickets_data(self, ticket_ids: Optional[List[str]] = None, limit: Optional[int] = None) -> Dict[str, Any]:
+
+    def extract_complete_tickets_data(
+        self, ticket_ids: Optional[List[str]] = None, limit: Optional[int] = None
+    ) -> Dict[str, Any]:
         """
         Extrai todos os dados necessários dos tickets
-        
+
         Returns:
             Dicionário com:
             - tickets: dados principais dos tickets
@@ -273,31 +282,32 @@ class ExtractElasticService:
         """
         # Extrai dados principais
         tickets_data = self.get_tickets_base_data(ticket_ids, limit)
-        
+
         if not tickets_data:
             return {
-                'tickets': [],
-                'attachments': {},
-                'tags': {},
-                'status_history': {},
-                'audit_logs': {}
+                "tickets": [],
+                "attachments": {},
+                "tags": {},
+                "status_history": {},
+                "audit_logs": {},
             }
-        
+
         # Extrai IDs para buscar dados relacionados
-        extracted_ticket_ids = [str(ticket['ticket_id']) for ticket in tickets_data]
-        
+        extracted_ticket_ids = [str(ticket["ticket_id"]) for ticket in tickets_data]
+
         # Extrai dados relacionados
         attachments = self.get_attachments(extracted_ticket_ids)
         tags = self.get_tags(extracted_ticket_ids)
         status_history = self.get_status_history(extracted_ticket_ids)
         audit_logs = self.get_audit_logs(extracted_ticket_ids)
-        
+
         return {
-            'tickets': tickets_data,
-            'attachments': attachments,
-            'tags': tags,
-            'status_history': status_history,
-            'audit_logs': audit_logs
+            "tickets": tickets_data,
+            "attachments": attachments,
+            "tags": tags,
+            "status_history": status_history,
+            "audit_logs": audit_logs,
         }
+
 
 aspectlib.weave(ExtractElasticService, log_execution)

@@ -73,7 +73,9 @@ class DBConnector:
                 results = self.cursor.fetchall()
                 return results
             except Exception as e:
-                logger.error(f"Erro ao executar query: {query}. Parâmetros: {params}. Erro: {str(e)}")
+                logger.error(
+                    f"Erro ao executar query: {query}. Parâmetros: {params}. Erro: {str(e)}"
+                )
 
     # Métodos CRUD básicos
     def select(self, table, columns="*", condition=None):
