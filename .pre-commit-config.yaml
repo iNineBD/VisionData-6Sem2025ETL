@@ -4,10 +4,9 @@ repos:
       - id: commit-msg-prefix
         name: Commit msg deve iniciar com API-<numero>
         language: system
-        entry: bash -c 'if ! grep -qE "^API-(100|[1-9][0-9]?|[1-9])" "$1"; then echo "Erro-> Commit deve começar com API-XXX (ex-> API-81)"; exit 1; fi'
-        args: [".git/commit-msg"]
+        entry: sh
+        args: ['-c', 'if ! head -1 "$1" | grep -qE "^API-[0-9]+"; then echo "❌ Erro: Commit deve começar com API-XXX (ex: API-81)"; exit 1; fi', '--']
         stages: [commit-msg]
-        pass_filenames: true
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -22,21 +21,21 @@ repos:
       - id: detect-private-key
       - id: end-of-file-fixer
 
-  - repo: https://github.com/psf/black-pre-commit-mirror
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  - repo: https://github.com/psf/black
     rev: 25.1.0
     hooks:
       - id: black
         language_version: python3.11
         args: ["--line-length=88"]
 
-  - repo: https://github.com/pycqa/isort # serve para ordenar imports
+  - repo: https://github.com/pycqa/isort
     rev: 6.0.1
     hooks:
       - id: isort
-  
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-      - id: black
-        args: [--line-length=88]
-        language_version: python3.11
+        args: ["--profile", "black"]

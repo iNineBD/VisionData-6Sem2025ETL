@@ -2,26 +2,22 @@ name: CI-Etl
 on:
   pull_request:
     branches:
-      - 'API/**'
+      - 'API-**'
       - develop
-      - 'sprint/**'
+      - 'sprint-**'
       - main
-      - prod
   push:
     branches:
-      - 'API/**'
+      - 'API-**'
       - develop
-      - 'sprint/**'
+      - 'sprint-**'
       - main
-      - prod
 permissions:
   contents: read
+
 jobs:
-  py-ci:
+  lint-and-format:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -32,13 +28,26 @@ jobs:
         run: |
           pip install -U pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install black ruff pytest build flake8
+          pip install black ruff flake8
       - name: Ruff (lint)
         run: ruff check .
       - name: Black (format)
         run: black --check src
-      - name: Flake8 (lint)
-        run: flake8 src
+
+  build-and-test:
+    needs: [lint-and-format]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install deps
+        run: |
+          pip install -U pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest pytest-cov build
       - name: Tests
         run: pytest --cov=src --cov-report=xml src/test -q --maxfail=1 --disable-warnings
       - name: Build (wheel/sdist)
@@ -50,18 +59,28 @@ jobs:
         with:
           name: etl-py
           path: etl-py.tar.gz
+      - name: Upload coverage for SonarQube
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
   sonarqube:
-    needs: [py-ci]
+    needs: [build-and-test]
     name: SonarQube Cloud
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
         with:
           fetch-depth: 0
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
-          python-version: ${{ matrix.python }}
+          python-version: '3.11'
       - name: Install tox and any other packages
         run: pip install tox
       - name: Run tox
@@ -70,3 +89,4 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
