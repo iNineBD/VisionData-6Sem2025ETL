@@ -1,5 +1,5 @@
 import math
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 import aspectlib
 
@@ -156,7 +156,7 @@ class ExtractElasticService:
             return {}
 
         base_query = """
-        SELECT 
+        SELECT
             AttachmentId as id,
             TicketId as ticket_id,
             FileName as filename,
@@ -192,7 +192,7 @@ class ExtractElasticService:
             return {}
 
         base_query = """
-        SELECT 
+        SELECT
             tt.TicketId as ticket_id,
             t.Name as tag_name
         FROM TicketTags tt
@@ -224,7 +224,7 @@ class ExtractElasticService:
             return {}
 
         base_query = """
-        SELECT 
+        SELECT
             tsh.TicketId as ticket_id,
             tsh.FromStatusId as from_status,
             tsh.ToStatusId as to_status,
@@ -260,7 +260,7 @@ class ExtractElasticService:
             return {}
 
         base_query = """
-        SELECT 
+        SELECT
             al.EntityId as ticket_id,
             al.AuditId as id,
             al.EntityType as entity_type,

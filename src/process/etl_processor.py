@@ -1,9 +1,11 @@
 import time
+
 import aspectlib
+
 from config.aop_logging import log_execution
 from config.db_connector import DBConnector
-from config.logger import setup_logger
 from config.elastic_client import ElasticClient
+from config.logger import setup_logger
 from services.extract_elastic_service import ExtractElasticService
 from services.transforme_elastic_service import TransformeElasticService
 

@@ -1,11 +1,12 @@
-from schedule import every
-from config.aop_logging import log_execution
-import aspectlib
 import os
+
+import aspectlib
+from schedule import every
+
+from config.aop_logging import log_execution
 
 # 1. Importe a nova classe que criamos
 from .etl_processor import EtlProcessor
-
 
 schedule_times = os.getenv("SCHEDULE_TIME", "00:10").split(",")
 

@@ -1,8 +1,8 @@
+import json
 import logging
 import os
-import json
-from logging import StreamHandler
 from datetime import datetime
+from logging import StreamHandler
 
 
 # FORMATADOR DO CONSOLE MODIFICADO PARA UNIFICAR A SAÍDA
@@ -26,6 +26,7 @@ class ConsoleFormatter(logging.Formatter):
             }
         # Converte o dicionário final para uma string JSON.
         return json.dumps(log_dict, ensure_ascii=False)
+
 
 def setup_logger(logger_name):
     logger = logging.getLogger(logger_name)
