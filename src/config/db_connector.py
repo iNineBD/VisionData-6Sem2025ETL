@@ -8,8 +8,8 @@ logger = setup_logger(__name__)
 
 
 class DBConnector:
-    def __init__(self, db_name=None):
-        self.db_name = db_name or os.getenv("DB_NAME")
+    def __init__(self):
+        self.db_name = os.getenv("DB_NAME")
         self.host = os.getenv("DB_HOST")
         self.user = os.getenv("DB_USER")
         self.password = os.getenv("DB_PASSWORD")
