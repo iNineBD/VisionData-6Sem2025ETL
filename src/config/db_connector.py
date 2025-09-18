@@ -35,6 +35,7 @@ class DBConnector:
 
         except Exception as e:
             logger.error(f"Erro ao conectar no banco de dados: {str(e)}")
+            raise
 
     def close(self):
         if self.cursor:
@@ -43,10 +44,18 @@ class DBConnector:
             self.connection.close()
         logger.info("Conexão fechada.")
 
-    # Método para execução de queries SQLs customizados
     def execute_query(self, query, params=None):
         try:
-            self.cursor.execute(query, params)
+            if not self.cursor:
+                logger.error(
+                    "Não foi possível executar a consulta: cursor não está disponível."
+                )
+                return
+
+            if params:
+                self.cursor.execute(query, params)
+            else:
+                self.cursor.execute(query)
             self.connection.commit()
         except Exception as e:
             logger.error(
@@ -54,9 +63,14 @@ class DBConnector:
             )
             self.connection.rollback()
 
-    # Método para buscar dados (SELECT)
     def fetch_all(self, query, params=None):
         try:
+            if not self.cursor:
+                logger.error(
+                    "Não foi possível buscar dados: cursor não está disponível."
+                )
+                return None
+
             if params:
                 self.cursor.execute(query, params)
             else:
@@ -67,8 +81,8 @@ class DBConnector:
             logger.error(
                 f"Erro ao executar query: {query}. Parâmetros: {params}. Erro: {str(e)}"
             )
+            return None
 
-    # Métodos CRUD básicos
     def select(self, table, columns="*", condition=None):
         if condition:
             condition_str = " AND ".join([f"{col} = ?" for col in condition.keys()])

@@ -22,14 +22,9 @@ class LoadDwService:
         return f"[{table_name}]"
 
     def load(self, transformed_data: Dict[str, pd.DataFrame]):
-        """CORREÇÃO: Atualiza a lista de colunas para Dim_Users."""
         dimension_tables = [
             ("Dim_Companies", "CompanyId", ["Name", "Segmento", "CNPJ"]),
-            (
-                "Dim_Users",
-                "UserId",
-                ["FullName", "CompanyKey", "IsVIP"],
-            ),  # <-- CORRIGIDO
+            ("Dim_Users", "UserId", ["FullName", "CompanyKey", "IsVIP"]),
             ("Dim_Agents", "AgentId", ["FullName", "DepartmentName", "IsActive"]),
             ("Dim_Products", "ProductId", ["Name", "Code", "IsActive"]),
             (
@@ -48,7 +43,6 @@ class LoadDwService:
                 and not transformed_data[table_name].empty
             ):
                 full_table_name = self._get_table_name_with_schema(table_name)
-                logger.info(f"Carregando dados para a dimensão: {full_table_name}")
                 self._load_dimension(
                     df=transformed_data[table_name],
                     table_name=full_table_name,
@@ -60,7 +54,6 @@ class LoadDwService:
             and not transformed_data["Fact_Tickets"].empty
         ):
             full_table_name = self._get_table_name_with_schema("Fact_Tickets")
-            logger.info(f"Carregando dados para a tabela de fatos: {full_table_name}")
             self._load_fact_tickets(transformed_data["Fact_Tickets"])
 
     def _load_dimension(
@@ -70,63 +63,187 @@ class LoadDwService:
         business_key: str,
         columns_to_update: List[str],
     ):
-        for index, row in df.iterrows():
-            update_set = ", ".join([f"Target.[{col}] = ?" for col in columns_to_update])
+        """
+        Carrega dados para uma tabela de dimensão usando um bulk merge.
+        """
+        temp_table_name = (
+            f"##{table_name.split('.')[-1].replace('[','').replace(']','')}_temp"
+        )
+        logger.info(
+            f"Iniciando carga para a dimensão {table_name}. Total de {len(df)} registros."
+        )
+
+        try:
+            # 1. Cria a tabela temporária
+            logger.debug(f"Criando tabela temporária: {temp_table_name}")
+            create_temp_table_sql = (
+                f"SELECT TOP 0 * INTO {temp_table_name} FROM {table_name}"
+            )
+            self.db.execute_query(create_temp_table_sql)
+
+            # 2. Insere os dados do DataFrame na tabela temporária
+            if not df.empty:
+                df_prepared = df.where(pd.notnull(df), None)
+
+                cols = ", ".join([f"[{c}]" for c in df_prepared.columns])
+                placeholders = ", ".join(["?"] * len(df_prepared.columns))
+                insert_sql = (
+                    f"INSERT INTO {temp_table_name} ({cols}) VALUES ({placeholders})"
+                )
+
+                chunksize = 1000
+                total_rows = len(df_prepared)
+                logger.info(
+                    f"Iniciando inserção de {total_rows} registros em lotes de {chunksize}..."
+                )
+                for i in range(0, total_rows, chunksize):
+                    chunk = df_prepared[i : i + chunksize]
+                    self.db.cursor.executemany(insert_sql, chunk.values.tolist())
+                    # <-- LOG DE PROGRESSO ADICIONADO AQUI -->
+                    logger.info(
+                        f"Progresso da carga para {table_name}: {i + len(chunk)}/{total_rows} registros inseridos."
+                    )
+
+                self.db.connection.commit()
+                logger.info("Todos os registros foram inseridos na tabela temporária.")
+
+            # 3. Constrói e executa o MERGE
+            logger.info("Iniciando a operação MERGE a partir da tabela temporária.")
+            update_set = ", ".join(
+                [f"Target.[{col}] = Source.[{col}]" for col in columns_to_update]
+            )
             insert_cols = ", ".join([f"[{col}]" for col in df.columns])
-            insert_placeholders = ", ".join(["?"] * len(df.columns))
+            source_cols = ", ".join([f"Source.[{col}]" for col in df.columns])
+
             merge_sql = f"""
             MERGE {table_name} AS Target
-            USING (SELECT ? AS {business_key}) AS Source
+            USING {temp_table_name} AS Source
             ON Target.[{business_key}] = Source.[{business_key}]
             WHEN MATCHED THEN
                 UPDATE SET {update_set}
             WHEN NOT MATCHED BY Target THEN
                 INSERT ({insert_cols})
-                VALUES ({insert_placeholders});
+                VALUES ({source_cols});
             """
-            params = (
-                [row[business_key]]
-                + [row[col] for col in columns_to_update]
-                + list(row.values)
+            self.db.execute_query(merge_sql)
+            logger.info(f"Operação MERGE para a dimensão {table_name} concluída.")
+
+        except Exception as e:
+            logger.error(
+                f"Erro durante a carga da dimensão {table_name}: {e}", exc_info=True
             )
-            self.db.execute_query(merge_sql, params)
-        logger.info(
-            f"Carga da dimensão {table_name} concluída ({len(df)} linhas processadas)."
-        )
+            try:
+                self.db.connection.rollback()
+            except Exception as rb_e:
+                logger.error(f"Erro ao tentar fazer rollback: {rb_e}")
+            raise
+
+        finally:
+            # 4. Garante que a tabela temporária seja removida
+            logger.debug(f"Removendo tabela temporária: {temp_table_name}")
+            self.db.execute_query(f"DROP TABLE IF EXISTS {temp_table_name}")
+            logger.info(f"Carga da dimensão {table_name} finalizada.")
 
     def _load_fact_tickets(self, df: pd.DataFrame):
         fact_table = self._get_table_name_with_schema("Fact_Tickets")
-        for index, row in df.iterrows():
-            keys = self._get_surrogate_keys(row)
-            if not keys.get("TicketKeyD") or not keys.get("UserKey"):
+        temp_fact_table = "##Fact_Tickets_temp"
+        logger.info(
+            f"Iniciando carga para a tabela de fatos {fact_table}. Total de {len(df)} registros."
+        )
+
+        try:
+            # 1. Adicionar colunas de chaves substitutas ao DataFrame
+            logger.info("Buscando chaves substitutas para a tabela de fatos...")
+            keys_df = df.apply(self._get_surrogate_keys, axis=1)
+            keys_df = keys_df.apply(pd.Series)
+
+            df_with_keys = pd.concat([df.reset_index(drop=True), keys_df], axis=1)
+
+            initial_rows = len(df_with_keys)
+            df_with_keys.dropna(subset=["TicketKeyD", "UserKey"], inplace=True)
+            if len(df_with_keys) < initial_rows:
                 logger.warning(
-                    f"Chaves não encontradas para o ticket {row['TicketId_BK']}. Pulando registro."
+                    f"{initial_rows - len(df_with_keys)} registros de fatos foram pulados por falta de chaves."
                 )
-                continue
+
+            if df_with_keys.empty:
+                logger.info("Nenhum registro de fato válido para carregar.")
+                return
+
+            # 2. Criar e carregar tabela temporária
+            logger.info(
+                f"Criando e carregando tabela temporária de fatos: {temp_fact_table}"
+            )
+            self.db.execute_query(
+                f"SELECT TOP 0 * INTO {temp_fact_table} FROM {fact_table}"
+            )
+
+            insert_cols = [
+                "TicketKeyD",
+                "UserKey",
+                "AgentKey",
+                "CompanyKey",
+                "CategoryKey",
+                "PriorityKey",
+                "StatusKey",
+                "ProductKey",
+                "TagKey",
+                "QtTickets",
+                "TicketId",
+            ]
+            df_to_insert = pd.DataFrame()
+            df_to_insert["TicketKeyD"] = df_with_keys["TicketKeyD"]
+            df_to_insert["UserKey"] = df_with_keys["UserKey"]
+            df_to_insert["AgentKey"] = df_with_keys["AgentKey"]
+            df_to_insert["CompanyKey"] = df_with_keys["CompanyKey"]
+            df_to_insert["CategoryKey"] = df_with_keys["CategoryKey"]
+            df_to_insert["PriorityKey"] = df_with_keys["PriorityKey"]
+            df_to_insert["StatusKey"] = df_with_keys["StatusKey"]
+            df_to_insert["ProductKey"] = df_with_keys["ProductKey"]
+            df_to_insert["TagKey"] = df_with_keys.get("TagKey", -1)
+            df_to_insert["QtTickets"] = df_with_keys["QtTickets"]
+            df_to_insert["TicketId"] = df_with_keys["TicketId_BK"]
+
+            df_to_insert = df_to_insert.where(pd.notnull(df_to_insert), None)
+
+            cols_str = ", ".join([f"[{c}]" for c in insert_cols])
+            placeholders = ", ".join(["?"] * len(insert_cols))
+            insert_sql = (
+                f"INSERT INTO {temp_fact_table} ({cols_str}) VALUES ({placeholders})"
+            )
+            self.db.cursor.executemany(insert_sql, df_to_insert.values.tolist())
+            self.db.connection.commit()
+            logger.info(
+                f"{len(df_to_insert)} registros inseridos na tabela temporária de fatos."
+            )
+
+            # 3. Executa o MERGE
+            logger.info("Iniciando a operação MERGE para a tabela de fatos.")
             merge_sql = f"""
             MERGE {fact_table} AS Target
-            USING (SELECT ? AS TicketKeyD) AS Source
+            USING {temp_fact_table} AS Source
             ON Target.TicketKeyD = Source.TicketKeyD
             WHEN NOT MATCHED BY Target THEN
-                INSERT (TicketKeyD, UserKey, AgentKey, CompanyKey, CategoryKey, PriorityKey, StatusKey, ProductKey, TagKey, QtTickets, TicketId)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                INSERT ({cols_str})
+                VALUES ({', '.join([f'Source.[{c}]' for c in insert_cols])});
             """
-            params = [
-                keys["TicketKeyD"],
-                keys["TicketKeyD"],
-                keys["UserKey"],
-                keys["AgentKey"],
-                keys["CompanyKey"],
-                keys["CategoryKey"],
-                keys["PriorityKey"],
-                keys["StatusKey"],
-                keys["ProductKey"],
-                keys.get("TagKey", -1),
-                row["QtTickets"],
-                row["TicketId_BK"],
-            ]
-            self.db.execute_query(merge_sql, params)
-        logger.info(f"Carga da {fact_table} concluída ({len(df)} linhas processadas).")
+            self.db.execute_query(merge_sql)
+            logger.info(f"Operação MERGE para a tabela {fact_table} concluída.")
+
+        except Exception as e:
+            logger.error(
+                f"Erro durante a carga da tabela de fatos {fact_table}: {e}",
+                exc_info=True,
+            )
+            try:
+                self.db.connection.rollback()
+            except Exception as rb_e:
+                logger.error(f"Erro ao tentar fazer rollback: {rb_e}")
+            raise
+        finally:
+            logger.info(f"Removendo tabela temporária de fatos: {temp_fact_table}")
+            self.db.execute_query(f"DROP TABLE IF EXISTS {temp_fact_table}")
+            logger.info("Carga da tabela de fatos finalizada.")
 
     def _get_surrogate_keys(self, fact_row: pd.Series) -> Dict:
         keys = {}

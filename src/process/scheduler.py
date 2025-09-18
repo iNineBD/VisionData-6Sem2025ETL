@@ -1,4 +1,3 @@
-import concurrent.futures
 import os
 
 import aspectlib
@@ -8,19 +7,16 @@ from config.aop_logging import log_execution
 from config.logger import setup_logger
 
 from .dw_etl_processor import DwEtlProcessor
-
-# Importe os dois processadores de ETL
 from .etl_processor import EtlProcessor
 
 logger = setup_logger(__name__)
 schedule_times = os.getenv("SCHEDULE_TIME", "00:10").split(",")
 
 
-@log_execution  # <-- CORREÇÃO: Adicionado para logar este job
+@log_execution
 def run_elastic_job():
     """
     Função dedicada para executar o ETL do Elasticsearch.
-    Será executada em sua própria thread.
     """
     logger.info("Iniciando o job de ETL para o Elasticsearch...")
     try:
@@ -33,11 +29,10 @@ def run_elastic_job():
         return "ELASTIC_ETL_FAILED"
 
 
-@log_execution  # <-- CORREÇÃO: Adicionado para logar este job
+@log_execution
 def run_dw_job():
     """
     Função dedicada para executar o ETL do Data Warehouse.
-    Será executada em sua própria thread.
     """
     logger.info("Iniciando o job de ETL para o Data Warehouse...")
     try:
@@ -52,21 +47,18 @@ def run_dw_job():
         return "DW_ETL_FAILED"
 
 
-# Loga a função orquestradora também
-def run_parallel_etl_jobs():
+def run_sequential_etl_jobs():
     """
-    Função que será chamada pelo agendador para executar ambos os ETLs
-    em paralelo usando um ThreadPoolExecutor.
+    Executa os jobs de ETL em sequência: primeiro o DW e depois o Elasticsearch.
     """
-    logger.info("Iniciando execução paralela dos jobs de ETL.")
+    logger.info("Iniciando execução sequencial dos jobs de ETL.")
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        future_elastic = executor.submit(run_elastic_job)
-        future_dw = executor.submit(run_dw_job)
+    dw_result = run_dw_job()
+    elastic_result = run_elastic_job()
 
-        results = {"elastic": future_elastic.result(), "dw": future_dw.result()}
+    results = {"dw": dw_result, "elastic": elastic_result}
 
-    logger.info(f"Execução paralela concluída com os seguintes status: {results}")
+    logger.info(f"Execução sequencial concluída com os seguintes status: {results}")
 
 
 aspectlib.weave(EtlProcessor, log_execution)
@@ -74,5 +66,5 @@ aspectlib.weave(DwEtlProcessor, log_execution)
 
 # Agendar para cada horário definido na variável de ambiente
 for horario in schedule_times:
-    # every().day.at(horario.strip()).do(run_parallel_etl_jobs)
-    every(20).seconds.do(run_parallel_etl_jobs)
+    # every().day.at(horario.strip()).do(run_sequential_etl_jobs)
+    every(20).seconds.do(run_sequential_etl_jobs)

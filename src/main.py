@@ -3,7 +3,7 @@ from schedule import run_pending
 
 from config.elastic_client import ElasticClient
 from config.logger import setup_logger
-from process.scheduler import run_parallel_etl_jobs
+from process.scheduler import run_sequential_etl_jobs
 
 logger = setup_logger(__name__)
 
