@@ -176,6 +176,7 @@ class LoadDwService:
 
         return pd.DataFrame(columns=[bk_column, sk_column])
 
+    # In src/services/load_dw_service.py
     def _load_fact_tickets(self, df: pd.DataFrame):
         fact_table = self._get_table_name_with_schema("Fact_Tickets")
         temp_fact_table = "##Fact_Tickets_temp"
@@ -237,12 +238,8 @@ class LoadDwService:
                 logger.info("Nenhum registro de fato válido para carregar.")
                 return
 
-            self.db.execute_query(
-                f"SELECT TOP 0 * INTO {temp_fact_table} FROM {fact_table}"
-            )
-
+            # Remove TicketKey do insert, pois é autoincremento
             final_columns = [
-                "TicketKey",
                 "UserKey",
                 "AgentKey",
                 "CompanyKey",
@@ -254,8 +251,42 @@ class LoadDwService:
                 "ChannelKey",
                 "QtTickets",
             ]
-            df_to_insert = df_with_keys[final_columns].copy()
-            df_to_insert = df_to_insert.where(pd.notnull(df_to_insert), None)
+            if "TicketKey" in df_with_keys.columns:
+                df_to_insert = df_with_keys[final_columns].copy()
+            else:
+                df_to_insert = df_with_keys[final_columns].copy()
+
+            cols_with_types = []
+            for col in df_to_insert.columns:
+                if "Key" in col:
+                    cols_with_types.append(f"[{col}] BIGINT")
+                else:
+                    cols_with_types.append(f"[{col}] INT")
+
+            create_temp_table_sql = (
+                f"CREATE TABLE {temp_fact_table} ({', '.join(cols_with_types)})"
+            )
+            self.db.execute_query(f"DROP TABLE IF EXISTS {temp_fact_table}")
+            self.db.execute_query(create_temp_table_sql)
+
+            # Converte as colunas de chave para o tipo Int64 do pandas
+            for col in final_columns:
+                if "Key" in col and col != "TicketKey":
+                    if col in df_to_insert.columns:
+                        df_to_insert[col] = df_to_insert[col].astype("Int64")
+
+            # Converte o DataFrame para uma lista de listas
+            def to_native(val):
+                if pd.isna(val):
+                    return None
+                if hasattr(val, "item"):
+                    return val.item()
+                return val
+
+            data_to_insert = [
+                [to_native(x) for x in row]
+                for row in df_to_insert.itertuples(index=False, name=None)
+            ]
 
             cols_str = ", ".join([f"[{c}]" for c in df_to_insert.columns])
             placeholders = ", ".join(["?"] * len(df_to_insert.columns))
@@ -263,17 +294,34 @@ class LoadDwService:
                 f"INSERT INTO {temp_fact_table} ({cols_str}) VALUES ({placeholders})"
             )
 
-            self.db.cursor.executemany(insert_sql, df_to_insert.values.tolist())
-            self.db.connection.commit()
+            chunk_size = 1000
+            total_chunks = (len(data_to_insert) + chunk_size - 1) // chunk_size
 
+            logger.info(
+                f"Iniciando inserção de {len(data_to_insert)} registros em {total_chunks} lotes de {chunk_size}."
+            )
+
+            for i in range(0, len(data_to_insert), chunk_size):
+                chunk = data_to_insert[i : i + chunk_size]
+                self.db.cursor.executemany(insert_sql, chunk)
+                self.db.connection.commit()
+                logger.info(
+                    f"Lote {i // chunk_size + 1}/{total_chunks} carregado com sucesso."
+                )
+
+            # --- CORREÇÃO APLICADA AQUI ---
+            # A query MERGE agora especifica explicitamente as colunas no INSERT e no VALUES,
+            # garantindo que não tentaremos inserir na coluna de identidade da tabela de destino.
             merge_sql = f"""
             MERGE {fact_table} AS Target
             USING {temp_fact_table} AS Source
-            ON Target.TicketKey = Source.TicketKey AND (Target.TagKey = Source.TagKey OR (Target.TagKey IS NULL AND Source.TagKey IS NULL))
+                ON Target.[UserKey] = Source.[UserKey] AND Target.[TagKey] = Source.[TagKey]
             WHEN NOT MATCHED BY Target THEN
                 INSERT ({cols_str})
                 VALUES ({', '.join([f'Source.[{c}]' for c in df_to_insert.columns])});
             """
+            # --- FIM DA CORREÇÃO ---
+
             self.db.execute_query(merge_sql)
             logger.info(f"Operação MERGE para a tabela {fact_table} concluída.")
 
