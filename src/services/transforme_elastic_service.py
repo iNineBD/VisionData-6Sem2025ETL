@@ -37,7 +37,6 @@ class TransformeElasticService:
         sla_first_response_mins = ticket.get("sla_first_response_mins")
         sla_resolution_mins = ticket.get("sla_resolution_mins")
 
-        # Converte strings para datetime se necessário
         def parse_datetime(dt):
             if dt is None:
                 return None
@@ -52,7 +51,6 @@ class TransformeElasticService:
         first_response_at = parse_datetime(first_response_at)
         closed_at = parse_datetime(closed_at)
 
-        # Calcula tempo de primeira resposta
         if created_at and first_response_at:
             first_response_time = (first_response_at - created_at).total_seconds() / 60
             metrics["first_response_time_minutes"] = int(first_response_time)
@@ -63,7 +61,6 @@ class TransformeElasticService:
             ):
                 metrics["first_response_sla_breached"] = True
 
-        # Calcula tempo de resolução
         if created_at and closed_at:
             resolution_time = (closed_at - created_at).total_seconds() / 60
             metrics["resolution_time_minutes"] = int(resolution_time)
@@ -78,7 +75,6 @@ class TransformeElasticService:
         """Cria texto de busca combinando campos relevantes"""
         search_parts = []
 
-        # Campos de texto relevantes para busca
         text_fields = [
             "title",
             "description",
@@ -137,7 +133,6 @@ class TransformeElasticService:
         """Transforma logs de auditoria para o formato Elasticsearch"""
         transformed = []
         for log in logs:
-            # Processa o campo details (JSON)
             details = log.get("details")
             if isinstance(details, str):
                 try:
@@ -174,13 +169,11 @@ class TransformeElasticService:
         """
         ticket_id = str(ticket["ticket_id"])
 
-        # Extrai dados relacionados
         attachments = related_data.get("attachments", {}).get(ticket_id, [])
         tags = related_data.get("tags", {}).get(ticket_id, [])
         status_history = related_data.get("status_history", {}).get(ticket_id, [])
         audit_logs = related_data.get("audit_logs", {}).get(ticket_id, [])
 
-        # Documento base para o Elasticsearch
         es_document = {
             "ticket_id": ticket_id,
             "title": ticket.get("title"),
@@ -190,7 +183,6 @@ class TransformeElasticService:
             "current_status": ticket.get("current_status"),
             "sla_plan": ticket.get("sla_plan"),
             "priority": ticket.get("priority"),
-            # Datas
             "dates": {
                 "created_at": TransformeElasticService._format_datetime(
                     ticket.get("created_at")
@@ -202,14 +194,12 @@ class TransformeElasticService:
                     ticket.get("closed_at")
                 ),
             },
-            # Empresa
             "company": {
                 "id": ticket.get("company_id"),
                 "name": ticket.get("company_name"),
                 "cnpj": ticket.get("company_cnpj"),
                 "segment": ticket.get("company_segment"),
             },
-            # Usuário que criou o ticket
             "created_by_user": {
                 "id": ticket.get("user_id"),
                 "full_name": ticket.get("user_full_name"),
@@ -218,40 +208,33 @@ class TransformeElasticService:
                 "cpf": ticket.get("user_cpf"),
                 "is_vip": bool(ticket.get("user_is_vip", False)),
             },
-            # Agente atribuído
             "assigned_agent": {
                 "id": ticket.get("agent_id"),
                 "full_name": ticket.get("agent_full_name"),
                 "email": ticket.get("agent_email"),
                 "department": ticket.get("agent_department"),
             },
-            # Produto
             "product": {
                 "id": ticket.get("product_id"),
                 "name": ticket.get("product_name"),
                 "code": ticket.get("product_code"),
                 "description": ticket.get("product_description"),
             },
-            # Categoria
             "category": {
                 "id": ticket.get("category_id"),
                 "name": ticket.get("category_name"),
             },
-            # Subcategoria
             "subcategory": {
                 "id": ticket.get("subcategory_id"),
                 "name": ticket.get("subcategory_name"),
             },
-            # Dados relacionados transformados
             "attachments": TransformeElasticService._transform_attachments(attachments),
             "tags": tags,
             "status_history": TransformeElasticService._transform_status_history(
                 status_history
             ),
             "audit_logs": TransformeElasticService._transform_audit_logs(audit_logs),
-            # Métricas de SLA
             "sla_metrics": TransformeElasticService._calculate_sla_metrics(ticket),
-            # Texto de busca
             "search_text": TransformeElasticService._create_search_text(ticket),
         }
 
@@ -273,7 +256,6 @@ class TransformeElasticService:
         if not tickets:
             return []
 
-        # Prepara dados relacionados
         related_data = {
             "attachments": extracted_data.get("attachments", {}),
             "tags": extracted_data.get("tags", {}),
@@ -281,7 +263,6 @@ class TransformeElasticService:
             "audit_logs": extracted_data.get("audit_logs", {}),
         }
 
-        # Transforma cada ticket
         transformed_documents = []
         for ticket in tickets:
             es_document = TransformeElasticService._transform_single_ticket(

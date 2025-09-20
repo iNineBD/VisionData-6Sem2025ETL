@@ -31,7 +31,6 @@ class ExtractElasticService:
             return []
 
         all_results = []
-        # Converte todos os IDs para string para consistência
         str_ids = [str(i) for i in ids]
 
         num_chunks = int(math.ceil(len(str_ids) / float(chunk_size)))
@@ -49,11 +48,9 @@ class ExtractElasticService:
 
             placeholders = ",".join(["?"] * len(chunk_ids))
 
-            # Adiciona os placeholders dentro de parênteses
             query = f"{base_query} ({placeholders})"
 
             try:
-                # Log da execução da query do chunk
                 logger.debug(
                     f"Executando lote {i+1}/{num_chunks} com {len(chunk_ids)} IDs."
                 )
@@ -131,22 +128,18 @@ class ExtractElasticService:
 
         results = []
         if ticket_ids:
-            # Constrói a consulta base para o chunking
             base_query = f"SELECT {select_fields} {from_clause} WHERE t.TicketId IN"
             results = self._execute_in_chunks(base_query, ticket_ids)
         elif limit:
-            # Constrói a consulta para o caso de 'limit' sem IDs específicos
             query = f"SELECT TOP {limit} {select_fields} {from_clause} ORDER BY t.CreatedAt DESC"
             results = self.db.fetch_all(query)
         else:
-            # Constrói a consulta para obter todos os tickets
             query = f"SELECT {select_fields} {from_clause} ORDER BY t.CreatedAt DESC"
             results = self.db.fetch_all(query)
 
         if not results:
             return []
 
-        # Converte pyodbc.Row para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         return [dict(zip(columns, row)) for row in results]
 
@@ -172,11 +165,9 @@ class ExtractElasticService:
         if not results:
             return {}
 
-        # Converte para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         attachments_data = [dict(zip(columns, row)) for row in results]
 
-        # Agrupa por ticket_id
         attachments_by_ticket = {}
         for attachment in attachments_data:
             ticket_id = str(attachment.pop("ticket_id"))
@@ -204,11 +195,9 @@ class ExtractElasticService:
         if not results:
             return {}
 
-        # Converte para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         tags_data = [dict(zip(columns, row)) for row in results]
 
-        # Agrupa por ticket_id
         tags_by_ticket = {}
         for tag in tags_data:
             ticket_id = str(tag["ticket_id"])
@@ -240,11 +229,9 @@ class ExtractElasticService:
         if not results:
             return {}
 
-        # Converte para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         history_data = [dict(zip(columns, row)) for row in results]
 
-        # Agrupa por ticket_id
         history_by_ticket = {}
         for history in history_data:
             ticket_id = str(history.pop("ticket_id"))
@@ -277,11 +264,9 @@ class ExtractElasticService:
         if not results:
             return {}
 
-        # Converte para dicionários
         columns = [column[0] for column in results[0].cursor_description]
         audit_data = [dict(zip(columns, row)) for row in results]
 
-        # Agrupa por ticket_id
         audit_by_ticket = {}
         for audit in audit_data:
             ticket_id = str(audit.pop("ticket_id"))
@@ -297,7 +282,6 @@ class ExtractElasticService:
         """
         Extrai todos os dados necessários dos tickets
         """
-        # Extrai dados principais
         tickets_data = self._get_tickets_base_data(ticket_ids, limit)
 
         if not tickets_data:
@@ -309,10 +293,8 @@ class ExtractElasticService:
                 "audit_logs": {},
             }
 
-        # Extrai IDs para buscar dados relacionados
         extracted_ticket_ids = [str(ticket["ticket_id"]) for ticket in tickets_data]
 
-        # Extrai dados relacionados
         attachments = self._get_attachments(extracted_ticket_ids)
         tags = self._get_tags(extracted_ticket_ids)
         status_history = self._get_status_history(extracted_ticket_ids)

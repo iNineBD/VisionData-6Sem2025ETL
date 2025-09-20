@@ -12,10 +12,8 @@ class ConsoleFormatter(logging.Formatter):
     """
 
     def format(self, record):
-        # Se a mensagem já for um dicionário, apenas o converte para JSON.
         if isinstance(record.msg, dict):
             log_dict = record.msg
-        # Se for uma string (log manual), cria o dicionário padrão.
         else:
             log_dict = {
                 "function": record.funcName,
@@ -24,7 +22,6 @@ class ConsoleFormatter(logging.Formatter):
                 "timestamp": datetime.fromtimestamp(record.created).isoformat(),
                 "message": record.getMessage(),
             }
-        # Converte o dicionário final para uma string JSON.
         return json.dumps(log_dict, ensure_ascii=False)
 
 
@@ -32,7 +29,6 @@ def setup_logger(logger_name):
     logger = logging.getLogger(logger_name)
     logger.setLevel(os.getenv("LOGGER_LEVEL", "INFO"))
 
-    # Nossos formatadores para console e Elastic
     console_formatter = ConsoleFormatter()
 
     if logger.hasHandlers():

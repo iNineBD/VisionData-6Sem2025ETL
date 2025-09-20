@@ -66,5 +66,5 @@ aspectlib.weave(DwEtlProcessor, log_execution)
 
 # Agendar para cada horário definido na variável de ambiente
 for horario in schedule_times:
-    # every().day.at(horario.strip()).do(run_sequential_etl_jobs)
-    every(20).seconds.do(run_sequential_etl_jobs)
+    every().day.at(horario.strip()).do(run_sequential_etl_jobs)
+    # every(20).seconds.do(run_sequential_etl_jobs)

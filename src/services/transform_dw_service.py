@@ -14,7 +14,6 @@ class TransformDwService:
 
         tags_data = extracted_data.get("tags", {})
 
-        # As funções agora retornam DataFrames com chaves de negócio consistentes
         dim_companies = self._create_dim_companies(tickets_df)
         dim_users = self._create_dim_users(tickets_df)
         dim_agents = self._create_dim_agents(tickets_df)
@@ -45,7 +44,7 @@ class TransformDwService:
         ].copy()
         dim.rename(
             columns={
-                "company_id": "CompanyId_BK",  # Renomeado para Business Key
+                "company_id": "CompanyId_BK",
                 "company_name": "Name",
                 "company_segment": "Segmento",
                 "company_cnpj": "CNPJ",
@@ -58,7 +57,7 @@ class TransformDwService:
         dim = df[["user_id", "user_full_name", "user_is_vip"]].copy()
         dim.rename(
             columns={
-                "user_id": "UserId_BK",  # Renomeado para Business Key
+                "user_id": "UserId_BK",
                 "user_full_name": "FullName",
                 "user_is_vip": "IsVIP",
             },
@@ -71,7 +70,7 @@ class TransformDwService:
         dim["IsActive"] = True
         dim.rename(
             columns={
-                "agent_id": "AgentId_BK",  # Renomeado para Business Key
+                "agent_id": "AgentId_BK",
                 "agent_full_name": "FullName",
                 "agent_department": "DepartmentName",
             },
@@ -84,7 +83,7 @@ class TransformDwService:
         dim["IsActive"] = True
         dim.rename(
             columns={
-                "product_id": "ProductId_BK",  # Renomeado para Business Key
+                "product_id": "ProductId_BK",
                 "product_name": "Name",
                 "product_code": "Code",
             },
@@ -96,7 +95,7 @@ class TransformDwService:
         dim = df[["category_id", "category_name", "subcategory_name"]].copy()
         dim.rename(
             columns={
-                "category_id": "CategoryId_BK",  # Renomeado para Business Key
+                "category_id": "CategoryId_BK",
                 "category_name": "CategoryName",
                 "subcategory_name": "SubcategoryName",
             },
@@ -106,17 +105,13 @@ class TransformDwService:
 
     def _create_dim_status(self, df: pd.DataFrame) -> pd.DataFrame:
         dim = df[["current_status"]].copy()
-        dim.rename(
-            columns={"current_status": "StatusId_BK"}, inplace=True
-        )  # Renomeado para Business Key
+        dim.rename(columns={"current_status": "StatusId_BK"}, inplace=True)
         dim["Name"] = "Status_" + dim["StatusId_BK"].astype(str)
         return dim.drop_duplicates(subset=["StatusId_BK"]).reset_index(drop=True)
 
     def _create_dim_priorities(self, df: pd.DataFrame) -> pd.DataFrame:
         dim = df[["priority"]].copy()
-        dim.rename(
-            columns={"priority": "PriorityId_BK"}, inplace=True
-        )  # Renomeado para Business Key
+        dim.rename(columns={"priority": "PriorityId_BK"}, inplace=True)
         dim["Name"] = "Priority_" + dim["PriorityId_BK"].astype(str)
         dim["Weight"] = 0
         return dim.drop_duplicates(subset=["PriorityId_BK"]).reset_index(drop=True)
@@ -131,15 +126,12 @@ class TransformDwService:
                     all_tags[tag_id] = tag_name
         if not all_tags:
             return pd.DataFrame(columns=["TagId_BK", "Name"])
-        df = pd.DataFrame(
-            list(all_tags.items()), columns=["TagId_BK", "Name"]
-        )  # Renomeado para Business Key
+        df = pd.DataFrame(list(all_tags.items()), columns=["TagId_BK", "Name"])
         return df
 
     def _create_dim_channel(self, df: pd.DataFrame) -> pd.DataFrame:
         dim = df[["channel"]].copy().dropna().drop_duplicates()
         dim.rename(columns={"channel": "ChannelName"}, inplace=True)
-        # Esta dimensão não tem uma chave de negócio numérica, o próprio nome é a chave.
         return dim.reset_index(drop=True)
 
     def _create_fact_tickets(
@@ -176,7 +168,7 @@ class TransformDwService:
 
         fact.rename(
             columns={
-                "ticket_id": "TicketKey",  # A chave do fato pode ser mantida
+                "ticket_id": "TicketKey",
                 "user_id": "UserId_BK",
                 "agent_id": "AgentId_BK",
                 "company_id": "CompanyId_BK",

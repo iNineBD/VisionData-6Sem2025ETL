@@ -22,8 +22,6 @@ class LoadDwService:
         return f"[{table_name}]"
 
     def load(self, transformed_data: Dict[str, pd.DataFrame]):
-        # Mapeamento atualizado para a lógica correta com chaves auto-incrementadas
-        # (Tabela DW, Coluna BK no DF, Coluna BK na Tabela DW, Atributos)
         dimension_mappings = [
             (
                 "Dim_Companies",
@@ -58,7 +56,7 @@ class LoadDwService:
                 "ChannelName",
                 "ChannelName",
                 [],
-            ),  # Canal não tem outros atributos
+            ),
         ]
 
         for table_name, bk_col_df, bk_col_db, attribute_cols in dimension_mappings:
@@ -71,7 +69,7 @@ class LoadDwService:
                 self._load_dimension(
                     df=df,
                     table_name=full_table_name,
-                    business_key_col=bk_col_df,  # Passa a coluna de chave de negócio
+                    business_key_col=bk_col_df,
                     columns_to_update=attribute_cols,
                 )
 
@@ -115,9 +113,6 @@ class LoadDwService:
 
             logger.info("Iniciando a operação MERGE a partir da tabela temporária.")
 
-            # --- CORREÇÃO APLICADA AQUI ---
-
-            # Constrói a cláusula de UPDATE apenas se houver colunas para atualizar.
             update_clause = ""
             if columns_to_update:
                 update_set = ", ".join(
@@ -129,7 +124,6 @@ class LoadDwService:
             insert_cols = ", ".join([f"[{c}]" for c in insert_cols_list])
             source_cols = ", ".join([f"Source.[{c}]" for c in insert_cols_list])
 
-            # O MERGE agora possui a cláusula de UPDATE condicional.
             merge_sql = f"""
             MERGE {table_name} AS Target
             USING {temp_table_name} AS Source
@@ -139,7 +133,6 @@ class LoadDwService:
                 INSERT ({insert_cols})
                 VALUES ({source_cols});
             """
-            # --- FIM DA CORREÇÃO ---
 
             self.db.execute_query(merge_sql)
 
@@ -165,7 +158,6 @@ class LoadDwService:
         table_name = self._get_table_name_with_schema(dim_table)
         placeholders = ", ".join(["?"] * len(business_keys))
 
-        # A query agora busca a chave substituta (sk) baseada na chave de negócio (bk)
         query = f"SELECT DISTINCT [{bk_column}] as bk, [{sk_column}] as sk FROM {table_name} WHERE [{bk_column}] IN ({placeholders})"
         results = self.db.fetch_all(query, business_keys)
 
@@ -176,7 +168,6 @@ class LoadDwService:
 
         return pd.DataFrame(columns=[bk_column, sk_column])
 
-    # In src/services/load_dw_service.py
     def _load_fact_tickets(self, df: pd.DataFrame):
         fact_table = self._get_table_name_with_schema("Fact_Tickets")
         temp_fact_table = "##Fact_Tickets_temp"
@@ -185,8 +176,6 @@ class LoadDwService:
         )
 
         try:
-            # Mapeamento para o lookup:
-            # (Tabela Dim, Coluna BK no DF Fato, Coluna BK na Tabela Dim, Coluna SK a buscar)
             lookups = [
                 ("Dim_Users", "UserId_BK", "UserId_BK", "UserKey"),
                 ("Dim_Agents", "AgentId_BK", "AgentId_BK", "AgentKey"),
@@ -212,7 +201,6 @@ class LoadDwService:
                 )
 
                 if not keys_df.empty:
-                    # Garantir consistência de tipos para o merge
                     df_with_keys[bk_col_df] = df_with_keys[bk_col_df].astype(str)
                     keys_df[bk_col_db] = keys_df[bk_col_db].astype(str)
 
@@ -238,7 +226,6 @@ class LoadDwService:
                 logger.info("Nenhum registro de fato válido para carregar.")
                 return
 
-            # Remove TicketKey do insert, pois é autoincremento
             final_columns = [
                 "UserKey",
                 "AgentKey",
@@ -269,13 +256,11 @@ class LoadDwService:
             self.db.execute_query(f"DROP TABLE IF EXISTS {temp_fact_table}")
             self.db.execute_query(create_temp_table_sql)
 
-            # Converte as colunas de chave para o tipo Int64 do pandas
             for col in final_columns:
                 if "Key" in col and col != "TicketKey":
                     if col in df_to_insert.columns:
                         df_to_insert[col] = df_to_insert[col].astype("Int64")
 
-            # Converte o DataFrame para uma lista de listas
             def to_native(val):
                 if pd.isna(val):
                     return None
@@ -309,9 +294,6 @@ class LoadDwService:
                     f"Lote {i // chunk_size + 1}/{total_chunks} carregado com sucesso."
                 )
 
-            # --- CORREÇÃO APLICADA AQUI ---
-            # A query MERGE agora especifica explicitamente as colunas no INSERT e no VALUES,
-            # garantindo que não tentaremos inserir na coluna de identidade da tabela de destino.
             merge_sql = f"""
             MERGE {fact_table} AS Target
             USING {temp_fact_table} AS Source
@@ -320,7 +302,6 @@ class LoadDwService:
                 INSERT ({cols_str})
                 VALUES ({', '.join([f'Source.[{c}]' for c in df_to_insert.columns])});
             """
-            # --- FIM DA CORREÇÃO ---
 
             self.db.execute_query(merge_sql)
             logger.info(f"Operação MERGE para a tabela {fact_table} concluída.")

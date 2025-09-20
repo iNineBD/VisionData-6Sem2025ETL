@@ -205,16 +205,12 @@ class ElasticClient:
         self._ensure_index()
 
     def _ensure_index(self):
-        # Garante que o nome do índice está definido
         if not self.elastic_index:
-            # 2. Use o logger para mensagens de erro
             logger.error(
                 "[ElasticClient] Variável de ambiente ELASTICSEARCH_INDEX não definida. Índice não será criado."
             )
             return
-        # Cria o índice com o mapeamento se não existir
         if not self.es.indices.exists(index=self.elastic_index):
-            # 3. Use o logger para mensagens de informação
             logger.info(
                 f"[ElasticClient] Índice '{self.elastic_index}' não existe. Criando..."
             )

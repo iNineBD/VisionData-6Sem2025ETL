@@ -10,6 +10,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Logs
+*logger_output_*
+
 # Distribution / packaging
 .Python
 .vscode
