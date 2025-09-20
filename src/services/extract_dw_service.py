@@ -66,6 +66,8 @@ class ExtractDwService:
 
         return all_results
 
+    # Em src/services/extract_dw_service.py
+
     def _get_tickets_base_data(
         self, ticket_ids: Optional[List[str]] = None, limit: Optional[int] = None
     ) -> List[Dict]:
@@ -111,6 +113,10 @@ class ExtractDwService:
             sla.ResolutionMins as sla_resolution_mins
         """
 
+        # ---- CORREÇÃO APLICADA AQUI ----
+        # A junção entre Tickets e Users foi ajustada para converter (CAST) ambas as chaves
+        # para VARCHAR. Isso resolve falhas de junção silenciosas causadas por
+        # incompatibilidade de tipos de dados (ex: INT vs VARCHAR).
         from_clause = """
             FROM dbo.Tickets t
             LEFT JOIN dbo.Companies c ON t.CompanyId = c.CompanyId
@@ -121,6 +127,7 @@ class ExtractDwService:
             LEFT JOIN dbo.Subcategories sub ON t.SubcategoryId = sub.SubcategoryId
             LEFT JOIN dbo.SLA_Plans sla ON t.SLAPlanId = sla.SLAPlanId
         """
+        # ---- FIM DA CORREÇÃO ----
 
         results = []
         if ticket_ids:

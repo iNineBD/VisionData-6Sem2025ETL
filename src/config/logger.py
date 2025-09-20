@@ -3,9 +3,9 @@ import logging
 import os
 from datetime import datetime
 from logging import StreamHandler
+from logging.handlers import RotatingFileHandler
 
 
-# FORMATADOR DO CONSOLE MODIFICADO PARA UNIFICAR A SAÍDA
 class ConsoleFormatter(logging.Formatter):
     """
     Um formatador que garante que TODA a saída do console seja uma string JSON.
@@ -41,13 +41,20 @@ def setup_logger(logger_name):
     logger_output = os.getenv("LOGGER_OUTPUT", "CONSOLE").split(",")
 
     if "FILE" in logger_output:
-        fh = logging.FileHandler(os.getenv("LOGGER_FILE", "app.log"))
+        log_filename_base = os.getenv("LOGGER_FILE", "app.log")
+        file_name, file_extension = os.path.splitext(log_filename_base)
+        log_filename = (
+            f"{file_name}_{datetime.now().strftime('%Y-%m-%d')}{file_extension}"
+        )
+
+        fh = RotatingFileHandler(
+            log_filename, maxBytes=10 * 1024 * 1024, backupCount=500, encoding="utf-8"
+        )
         fh.setFormatter(console_formatter)
         logger.addHandler(fh)
 
     if "CONSOLE" in logger_output:
         ch = StreamHandler()
-        # USAMOS O NOVO FORMATADOR UNIFICADO AQUI
         ch.setFormatter(console_formatter)
         logger.addHandler(ch)
 
