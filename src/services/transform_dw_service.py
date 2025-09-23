@@ -110,10 +110,9 @@ class TransformDwService:
         return dim.drop_duplicates(subset=["StatusId_BK"]).reset_index(drop=True)
 
     def _create_dim_priorities(self, df: pd.DataFrame) -> pd.DataFrame:
-        dim = df[["priority"]].copy()
-        dim.rename(columns={"priority": "PriorityId_BK"}, inplace=True)
-        dim["Name"] = "Priority_" + dim["PriorityId_BK"].astype(str)
-        dim["Weight"] = 0
+        dim = df[["priorityId", "name"]].copy()
+        dim.rename(columns={"priorityId": "PriorityId_BK"}, inplace=True)
+        dim["name"] = dim["name"].astype(str)
         return dim.drop_duplicates(subset=["PriorityId_BK"]).reset_index(drop=True)
 
     def _create_dim_tags(self, tags_data: Dict[str, List[Dict]]) -> pd.DataFrame:
@@ -158,7 +157,7 @@ class TransformDwService:
                 "agent_id",
                 "company_id",
                 "category_id",
-                "priority",
+                "priorityId",
                 "current_status",
                 "product_id",
                 "channel",
@@ -173,7 +172,7 @@ class TransformDwService:
                 "agent_id": "AgentId_BK",
                 "company_id": "CompanyId_BK",
                 "category_id": "CategoryId_BK",
-                "priority": "PriorityId_BK",
+                "priorityId": "PriorityId_BK",
                 "current_status": "StatusId_BK",
                 "product_id": "ProductId_BK",
                 "channel": "Channel_BK",

@@ -49,7 +49,7 @@ class LoadDwService:
                 ["CategoryName", "SubcategoryName"],
             ),
             ("Dim_Status", "StatusId_BK", "StatusId_BK", ["Name"]),
-            ("Dim_Priorities", "PriorityId_BK", "PriorityId_BK", ["Name", "Weight"]),
+            ("Dim_Priorities", "PriorityId_BK", "PriorityId_BK", ["name"]),
             ("Dim_Tags", "TagId_BK", "TagId_BK", ["Name"]),
             (
                 "Dim_Channel",

@@ -79,7 +79,8 @@ class ExtractDwService:
             t.Device as device,
             t.CurrentStatusId as current_status,
             t.SLAPlanId as sla_plan,
-            t.PriorityId as priority,
+            t.PriorityId as priorityId,
+            pe.Name as name,
             t.CreatedAt as created_at,
             t.FirstResponseAt as first_response_at,
             t.ClosedAt as closed_at,
@@ -96,7 +97,7 @@ class ExtractDwService:
             a.AgentId as agent_id,
             a.FullName as agent_full_name,
             a.Email as agent_email,
-            a.DepartmentId as agent_department,
+            d.Name as agent_department,
             p.ProductId as product_id,
             p.Name as product_name,
             p.Code as product_code,
@@ -115,6 +116,8 @@ class ExtractDwService:
             LEFT JOIN dbo.Companies c ON t.CompanyId = c.CompanyId
             LEFT JOIN dbo.Users u ON t.CreatedByUserId = u.UserId
             LEFT JOIN dbo.Agents a ON t.AssignedAgentId = a.AgentId
+            LEFT JOIN dbo.Departments d ON a.DepartmentId = d.DepartmentId
+            LEFT JOIN dbo.Priorities pe ON pe.PriorityId = t.PriorityId
             LEFT JOIN dbo.Products p ON t.ProductId = p.ProductId
             LEFT JOIN dbo.Categories cat ON t.CategoryId = cat.CategoryId
             LEFT JOIN dbo.Subcategories sub ON t.SubcategoryId = sub.SubcategoryId
