@@ -12,7 +12,7 @@ from services.transforme_elastic_service import TransformeElasticService
 logger = setup_logger(__name__)
 
 
-class EtlProcessor:
+class ElasticEtlProcessor:
     def __init__(self):
         self.db_connector = DBConnector()
         self.db_connector.connect()
@@ -62,4 +62,4 @@ class EtlProcessor:
         self.db_connector.close()
 
 
-aspectlib.weave(EtlProcessor, log_execution)
+aspectlib.weave(ElasticEtlProcessor, log_execution)

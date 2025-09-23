@@ -7,7 +7,7 @@ from config.aop_logging import log_execution
 from config.logger import setup_logger
 
 from .dw_etl_processor import DwEtlProcessor
-from .etl_processor import EtlProcessor
+from .elastic_etl_processor import ElasticEtlProcessor
 
 logger = setup_logger(__name__)
 schedule_times = os.getenv("SCHEDULE_TIME", "00:10").split(",")
@@ -20,7 +20,7 @@ def run_elastic_job():
     """
     logger.info("Iniciando o job de ETL para o Elasticsearch...")
     try:
-        etl_job_elastic = EtlProcessor()
+        etl_job_elastic = ElasticEtlProcessor()
         etl_job_elastic.execute()
         logger.info("Job de ETL para o Elasticsearch concluído com sucesso.")
         return "ELASTIC_ETL_SUCCESS"
@@ -61,7 +61,7 @@ def run_sequential_etl_jobs():
     logger.info(f"Execução sequencial concluída com os seguintes status: {results}")
 
 
-aspectlib.weave(EtlProcessor, log_execution)
+aspectlib.weave(ElasticEtlProcessor, log_execution)
 aspectlib.weave(DwEtlProcessor, log_execution)
 
 # Agendar para cada horário definido na variável de ambiente
