@@ -77,7 +77,7 @@ class ExtractElasticService:
             t.Device as device,
             t.CurrentStatusId as current_status,
             t.SLAPlanId as sla_plan,
-            t.PriorityId as priority,
+            pe.Name as priority,
             t.CreatedAt as created_at,
             t.FirstResponseAt as first_response_at,
             t.ClosedAt as closed_at,
@@ -97,7 +97,7 @@ class ExtractElasticService:
             a.AgentId as agent_id,
             a.FullName as agent_full_name,
             a.Email as agent_email,
-            a.DepartmentId as agent_department,
+            d.Name as agent_department,
             -- Product data
             p.ProductId as product_id,
             p.Name as product_name,
@@ -121,6 +121,8 @@ class ExtractElasticService:
             LEFT JOIN Users u ON t.CreatedByUserId = u.UserId
             LEFT JOIN Agents a ON t.AssignedAgentId = a.AgentId
             LEFT JOIN Products p ON t.ProductId = p.ProductId
+            LEFT JOIN dbo.Departments d ON a.DepartmentId = d.DepartmentId
+            LEFT JOIN dbo.Priorities pe ON pe.PriorityId = t.PriorityId
             LEFT JOIN Categories cat ON t.CategoryId = cat.CategoryId
             LEFT JOIN Subcategories sub ON t.SubcategoryId = sub.SubcategoryId
             LEFT JOIN SLA_Plans sla ON t.SLAPlanId = sla.SLAPlanId
