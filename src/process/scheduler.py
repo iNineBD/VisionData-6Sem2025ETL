@@ -16,55 +16,55 @@ schedule_times = os.getenv("SCHEDULE_TIME", "00:10").split(",")
 @log_execution
 def run_elastic_job():
     """
-    Função dedicada para executar o ETL do Elasticsearch.
+    Function dedicated to running the Elasticsearch ETL.
     """
-    logger.info("Iniciando o job de ETL para o Elasticsearch...")
+    logger.info("Starting the ETL job for Elasticsearch...")
     try:
         etl_job_elastic = ElasticEtlProcessor()
         etl_job_elastic.execute()
-        logger.info("Job de ETL para o Elasticsearch concluído com sucesso.")
+        logger.info("ETL job for Elasticsearch completed successfully.")
         return "ELASTIC_ETL_SUCCESS"
     except Exception as e:
-        logger.error(f"Erro ao executar o ETL para o Elasticsearch: {e}", exc_info=True)
+        logger.error(f"Error running ETL for Elasticsearch: {e}", exc_info=True)
         return "ELASTIC_ETL_FAILED"
 
 
 @log_execution
 def run_dw_job():
     """
-    Função dedicada para executar o ETL do Data Warehouse.
+    Function dedicated to running the Data Warehouse ETL.
     """
-    logger.info("Iniciando o job de ETL para o Data Warehouse...")
+    logger.info("Starting the ETL job for the Data Warehouse...")
     try:
         etl_job_dw = DwEtlProcessor()
         etl_job_dw.execute()
-        logger.info("Job de ETL para o Data Warehouse concluído com sucesso.")
+        logger.info("ETL job for the Data Warehouse completed successfully.")
         return "DW_ETL_SUCCESS"
     except Exception as e:
-        logger.error(
-            f"Erro ao executar o ETL para o Data Warehouse: {e}", exc_info=True
-        )
+        logger.error(f"Error running ETL for the Data Warehouse: {e}", exc_info=True)
         return "DW_ETL_FAILED"
 
 
 def run_sequential_etl_jobs():
     """
-    Executa os jobs de ETL em sequência: primeiro o DW e depois o Elasticsearch.
+    Runs the ETL jobs sequentially: first DW, then Elasticsearch.
     """
-    logger.info("Iniciando execução sequencial dos jobs de ETL.")
+    logger.info("Starting sequential execution of ETL jobs.")
 
     dw_result = run_dw_job()
     elastic_result = run_elastic_job()
 
     results = {"dw": dw_result, "elastic": elastic_result}
 
-    logger.info(f"Execução sequencial concluída com os seguintes status: {results}")
+    logger.info(
+        f"Sequential execution completed with the following statuses: {results}"
+    )
 
 
 aspectlib.weave(ElasticEtlProcessor, log_execution)
 aspectlib.weave(DwEtlProcessor, log_execution)
 
-# Agendar para cada horário definido na variável de ambiente
+# Schedule for each time defined in the environment variable
 for horario in schedule_times:
     every().day.at(horario.strip()).do(run_sequential_etl_jobs)
-    # every(20).seconds.do(run_sequential_etl_jobs)
+    # every(20).seconds.do(run_sequential_etl_jobs)  # Example: schedule every 20 seconds

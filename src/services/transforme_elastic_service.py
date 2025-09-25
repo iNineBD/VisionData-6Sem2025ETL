@@ -8,11 +8,11 @@ from config.aop_logging import log_execution
 
 
 class TransformeElasticService:
-    """Serviço responsável por transformar dados dos tickets para o formato Elasticsearch"""
+    """Service responsible for transforming ticket data to Elasticsearch format"""
 
     @staticmethod
     def _format_datetime(dt) -> Optional[str]:
-        """Formata datetime para o padrão do Elasticsearch"""
+        """Formats datetime to Elasticsearch standard"""
         if dt is None:
             return None
         if isinstance(dt, str):
@@ -23,7 +23,7 @@ class TransformeElasticService:
 
     @staticmethod
     def _calculate_sla_metrics(ticket: Dict) -> Dict:
-        """Calcula métricas de SLA baseado nos dados do ticket"""
+        """Calculates SLA metrics based on ticket data"""
         metrics = {
             "first_response_time_minutes": None,
             "resolution_time_minutes": None,
@@ -72,7 +72,7 @@ class TransformeElasticService:
 
     @staticmethod
     def _create_search_text(ticket: Dict) -> str:
-        """Cria texto de busca combinando campos relevantes"""
+        """Creates search text by combining relevant fields"""
         search_parts = []
 
         text_fields = [
@@ -95,7 +95,7 @@ class TransformeElasticService:
 
     @staticmethod
     def _transform_attachments(attachments: List[Dict]) -> List[Dict]:
-        """Transforma anexos para o formato Elasticsearch"""
+        """Transforms attachments to Elasticsearch format"""
         transformed = []
         for attachment in attachments:
             transformed_attachment = {
@@ -113,7 +113,7 @@ class TransformeElasticService:
 
     @staticmethod
     def _transform_status_history(history: List[Dict]) -> List[Dict]:
-        """Transforma histórico de status para o formato Elasticsearch"""
+        """Transforms status history to Elasticsearch format"""
         transformed = []
         for status in history:
             transformed_status = {
@@ -130,7 +130,7 @@ class TransformeElasticService:
 
     @staticmethod
     def _transform_audit_logs(logs: List[Dict]) -> List[Dict]:
-        """Transforma logs de auditoria para o formato Elasticsearch"""
+        """Transforms audit logs to Elasticsearch format"""
         transformed = []
         for log in logs:
             details = log.get("details")
@@ -158,14 +158,14 @@ class TransformeElasticService:
     @staticmethod
     def _transform_single_ticket(ticket: Dict, related_data: Dict) -> Dict:
         """
-        Transforma um único ticket para o formato Elasticsearch
+        Transforms a single ticket to Elasticsearch format
 
         Args:
-            ticket: Dados do ticket
-            related_data: Dicionário com dados relacionados (attachments, tags, etc.)
+            ticket: Ticket data
+            related_data: Dictionary with related data (attachments, tags, etc.)
 
         Returns:
-            Documento formatado para Elasticsearch
+            Document formatted for Elasticsearch
         """
         ticket_id = str(ticket["ticket_id"])
 
@@ -243,13 +243,13 @@ class TransformeElasticService:
     @staticmethod
     def transform_tickets_batch(extracted_data: Dict) -> List[Dict]:
         """
-        Transforma lote de tickets extraídos para o formato Elasticsearch
+        Transforms batch of extracted tickets to Elasticsearch format
 
         Args:
-            extracted_data: Dados extraídos pelo TicketExtractService
+            extracted_data: Data extracted by TicketExtractService
 
         Returns:
-            Lista de documentos formatados para Elasticsearch
+            List of documents formatted for Elasticsearch
         """
         tickets = extracted_data.get("tickets", [])
 

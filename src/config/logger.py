@@ -8,7 +8,7 @@ from logging.handlers import RotatingFileHandler
 
 class ConsoleFormatter(logging.Formatter):
     """
-    Um formatador que garante que TODA a saída do console seja uma string JSON.
+    A formatter that ensures ALL console output is a JSON string.
     """
 
     def format(self, record):

@@ -22,28 +22,28 @@ class DwEtlProcessor:
         self.load_service = LoadDwService(db_connection=self.db_source_connector)
 
     def extract_data(self):
-        logger.info("DW ETL: Extraindo dados da fonte")
+        logger.info("DW ETL: Extracting data from source")
         time.sleep(2)
         raw_data = self.extract_service.extract_complete_tickets_data()
-        logger.info("DW ETL: Extração de dados concluída")
+        logger.info("DW ETL: Data extraction completed")
         return raw_data
 
     def transform_data(self, extracted_data):
-        logger.info("DW ETL: Transformando dados para o modelo dimensional")
+        logger.info("DW ETL: Transforming data to dimensional model")
         time.sleep(2)
         transformed = self.transform_service.transform(extracted_data)
-        logger.info("DW ETL: Transformação dos dados concluída")
+        logger.info("DW ETL: Data transformation completed")
         return transformed
 
     def load_data(self, transformed_data):
-        """Carrega dados no Data Warehouse"""
-        logger.info("DW ETL: Carregando dados no Data Warehouse")
+        """Loads data into the Data Warehouse"""
+        logger.info("DW ETL: Loading data into the Data Warehouse")
         if not transformed_data:
-            logger.error("DW ETL: Nenhum dado transformado para carregar")
+            logger.error("DW ETL: No transformed data to load")
             return
 
         self.load_service.load(transformed_data)
-        logger.info("DW ETL: Carregamento no DW concluído.")
+        logger.info("DW ETL: Load into DW completed.")
 
     def execute(self):
         try:
@@ -52,7 +52,7 @@ class DwEtlProcessor:
                 transformed = self.transform_data(extracted)
                 self.load_data(transformed)
             else:
-                logger.info("DW ETL: Nenhum dado extraído para processar.")
+                logger.info("DW ETL: No data extracted to process.")
         finally:
             self.db_source_connector.close()
 

@@ -90,7 +90,7 @@ class LoadDwService:
             f"##{table_name.split('.')[-1].replace('[','').replace(']','')}_temp"
         )
         logger.info(
-            f"Iniciando carga para a dimensão {table_name}. Total de {len(df)} registros."
+            f"Starting load for dimension {table_name}. Total of {len(df)} records."
         )
 
         try:
@@ -111,7 +111,7 @@ class LoadDwService:
                 self.db.cursor.executemany(insert_sql, df_prepared.values.tolist())
                 self.db.connection.commit()
 
-            logger.info("Iniciando a operação MERGE a partir da tabela temporária.")
+            logger.info("Starting MERGE operation from temporary table.")
 
             update_clause = ""
             if columns_to_update:
@@ -136,17 +136,17 @@ class LoadDwService:
 
             self.db.execute_query(merge_sql)
 
-            logger.info(f"Operação MERGE para a dimensão {table_name} concluída.")
+            logger.info(f"MERGE operation for dimension {table_name} completed.")
 
         except Exception as e:
             logger.error(
-                f"Erro durante a carga da dimensão {table_name}: {e}", exc_info=True
+                f"Error during load of dimension {table_name}: {e}", exc_info=True
             )
             raise
 
         finally:
             self.db.execute_query(f"DROP TABLE IF EXISTS {temp_table_name}")
-            logger.info(f"Carga da dimensão {table_name} finalizada.")
+            logger.info(f"Load for dimension {table_name} finished.")
 
     def _get_surrogate_keys_bulk(
         self,
@@ -172,7 +172,7 @@ class LoadDwService:
         fact_table = self._get_table_name_with_schema("Fact_Tickets")
         temp_fact_table = "##Fact_Tickets_temp"
         logger.info(
-            f"Iniciando carga para a tabela de fatos {fact_table}. Total de {len(df)} registros."
+            f"Starting load for fact table {fact_table}. Total of {len(df)} records."
         )
 
         try:
@@ -223,7 +223,7 @@ class LoadDwService:
             df_with_keys.dropna(subset=["TicketKey", "UserKey"], inplace=True)
 
             if df_with_keys.empty:
-                logger.info("Nenhum registro de fato válido para carregar.")
+                logger.info("No valid fact record to load.")
                 return
 
             final_columns = [
@@ -283,7 +283,7 @@ class LoadDwService:
             total_chunks = (len(data_to_insert) + chunk_size - 1) // chunk_size
 
             logger.info(
-                f"Iniciando inserção de {len(data_to_insert)} registros em {total_chunks} lotes de {chunk_size}."
+                f"Starting insertion of {len(data_to_insert)} records in {total_chunks} batches of {chunk_size}."
             )
 
             for i in range(0, len(data_to_insert), chunk_size):
@@ -291,7 +291,7 @@ class LoadDwService:
                 self.db.cursor.executemany(insert_sql, chunk)
                 self.db.connection.commit()
                 logger.info(
-                    f"Lote {i // chunk_size + 1}/{total_chunks} carregado com sucesso."
+                    f"Batch {i // chunk_size + 1}/{total_chunks} loaded successfully."
                 )
 
             merge_sql = f"""
@@ -304,17 +304,17 @@ class LoadDwService:
             """
 
             self.db.execute_query(merge_sql)
-            logger.info(f"Operação MERGE para a tabela {fact_table} concluída.")
+            logger.info(f"MERGE operation for table {fact_table} completed.")
 
         except Exception as e:
             logger.error(
-                f"Erro durante a carga da tabela de fatos {fact_table}: {e}",
+                f"Error during load of fact table {fact_table}: {e}",
                 exc_info=True,
             )
             raise
         finally:
             self.db.execute_query(f"DROP TABLE IF EXISTS {temp_fact_table}")
-            logger.info("Carga da tabela de fatos finalizada.")
+            logger.info("Load for fact table finished.")
 
 
 aspectlib.weave(LoadDwService, log_execution)

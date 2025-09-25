@@ -22,38 +22,38 @@ class ElasticEtlProcessor:
         self.transforme_service = TransformeElasticService()
 
     def extract_data(self):
-        logger.info("Extraindo dados")
+        logger.info("Extracting data")
         time.sleep(2)
         raw_data = self.extract_service.extract_complete_tickets_data()
-        logger.info("Extração de dados concluída")
+        logger.info("Data extraction completed")
         return raw_data
 
     def transform_data(self, extracted_data):
-        logger.info("Transformando dados")
+        logger.info("Transforming data")
         time.sleep(2)
 
         self.transformed_data = self.transforme_service.transform_tickets_batch(
             extracted_data=extracted_data
         )
-        logger.info("Transformação dos dados concluída")
+        logger.info("Data transformation completed")
 
     def load_data(self):
-        """Carrega dados no Elasticsearch"""
-        logger.info("Carregando dados no Elasticsearch")
+        """Loads data into Elasticsearch"""
+        logger.info("Loading data into Elasticsearch")
 
         if not self.transformed_data:
-            logger.error("Nenhum dado transformado para carregar")
+            logger.error("No transformed data to load")
             return
 
-        # Carrega cada documento
+        # Loads each document
         for document in self.transformed_data:
             doc_id = document.get("ticket_id")
             if doc_id:
                 self.elastic_client.upsert_document(doc_id=doc_id, data=document)
             else:
-                logger.error("Documento sem ticket_id")
+                logger.error("Document without ticket_id")
 
-        logger.info(f"Carregamento concluído: {len(self.transformed_data)} documentos")
+        logger.info(f"Load completed: {len(self.transformed_data)} documents")
 
     def execute(self):
         extracted = self.extract_data()

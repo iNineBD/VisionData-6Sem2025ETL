@@ -10,12 +10,12 @@ logger = setup_logger(__name__)
 
 
 class ExtractElasticService:
-    """Serviço responsável por extrair dados dos tickets do banco de dados"""
+    """Service responsible for extracting ticket data from the database"""
 
     def __init__(self, db_connection):
         """
         Args:
-            db_connection: Instância da classe DBConnector
+            db_connection: Instance of DBConnector class
         """
 
         self.db = db_connection
@@ -24,8 +24,8 @@ class ExtractElasticService:
         self, base_query: str, ids: list, chunk_size: int = 1000
     ) -> list:
         """
-        Executa uma consulta SQL com uma cláusula IN, dividindo-a em lotes menores
-        para evitar o limite de parâmetros do SQL Server.
+        Executes a SQL query with an IN clause, splitting it into smaller batches
+        to avoid the SQL Server parameter limit.
         """
         if not ids:
             return []
@@ -35,7 +35,7 @@ class ExtractElasticService:
 
         num_chunks = int(math.ceil(len(str_ids) / float(chunk_size)))
         logger.info(
-            f"Dividindo {len(str_ids)} IDs em {num_chunks} lotes de {chunk_size}."
+            f"Splitting {len(str_ids)} IDs into {num_chunks} batches of {chunk_size}."
         )
 
         for i in range(num_chunks):
@@ -52,13 +52,13 @@ class ExtractElasticService:
 
             try:
                 logger.debug(
-                    f"Executando lote {i+1}/{num_chunks} com {len(chunk_ids)} IDs."
+                    f"Executing batch {i+1}/{num_chunks} with {len(chunk_ids)} IDs."
                 )
                 results_chunk = self.db.fetch_all(query, chunk_ids)
                 if results_chunk:
                     all_results.extend(results_chunk)
             except Exception as e:
-                logger.error(f"Erro ao executar o lote {i+1}/{num_chunks}: {e}")
+                logger.error(f"Error executing batch {i+1}/{num_chunks}: {e}")
                 pass
 
         return all_results
@@ -67,7 +67,7 @@ class ExtractElasticService:
         self, ticket_ids: Optional[List[str]] = None, limit: Optional[int] = None
     ) -> List[Dict]:
         """
-        Extrai dados principais dos tickets com relacionamentos básicos.
+        Extracts main ticket data with basic relationships.
         """
         select_fields = """
             t.TicketId as ticket_id,
@@ -146,7 +146,9 @@ class ExtractElasticService:
         return [dict(zip(columns, row)) for row in results]
 
     def _get_attachments(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
-        """Extrai anexos dos tickets especificados."""
+        """
+        Extracts attachments from the specified tickets.
+        """
         if not ticket_ids:
             return {}
 
@@ -180,7 +182,9 @@ class ExtractElasticService:
         return attachments_by_ticket
 
     def _get_tags(self, ticket_ids: List[str]) -> Dict[str, List[str]]:
-        """Extrai tags dos tickets especificados"""
+        """
+        Extracts tags from the specified tickets.
+        """
         if not ticket_ids:
             return {}
 
@@ -210,7 +214,9 @@ class ExtractElasticService:
         return tags_by_ticket
 
     def _get_status_history(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
-        """Extrai histórico de status dos tickets especificados"""
+        """
+        Extracts status history from the specified tickets.
+        """
         if not ticket_ids:
             return {}
 
@@ -244,7 +250,9 @@ class ExtractElasticService:
         return history_by_ticket
 
     def _get_audit_logs(self, ticket_ids: List[str]) -> Dict[str, List[Dict]]:
-        """Extrai logs de auditoria dos tickets especificados."""
+        """
+        Extracts audit logs from the specified tickets.
+        """
         if not ticket_ids:
             return {}
 
@@ -282,7 +290,7 @@ class ExtractElasticService:
         self, ticket_ids: Optional[List[str]] = None, limit: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Extrai todos os dados necessários dos tickets
+        Extracts all necessary data from tickets
         """
         tickets_data = self._get_tickets_base_data(ticket_ids, limit)
 

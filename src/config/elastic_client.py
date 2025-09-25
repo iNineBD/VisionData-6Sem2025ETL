@@ -207,23 +207,23 @@ class ElasticClient:
     def _ensure_index(self):
         if not self.elastic_index:
             logger.error(
-                "[ElasticClient] Variável de ambiente ELASTICSEARCH_INDEX não definida. Índice não será criado."
+                "[ElasticClient] Environment variable ELASTICSEARCH_INDEX not defined. Index will not be created."
             )
             return
         if not self.es.indices.exists(index=self.elastic_index):
             logger.info(
-                f"[ElasticClient] Índice '{self.elastic_index}' não existe. Criando..."
+                f"[ElasticClient] Index '{self.elastic_index}' does not exist. Creating..."
             )
             self.es.indices.create(index=self.elastic_index, body=INDEX_MAPPING)
         else:
-            logger.info(f"[ElasticClient] Índice '{self.elastic_index}' já existe.")
+            logger.info(f"[ElasticClient] Index '{self.elastic_index}' already exists.")
 
     def upsert_document(self, doc_id, data):
         """
-        Executa uma operação de 'update' ou 'insert' (upsert).
+        Performs an 'update' or 'insert' (upsert) operation.
 
-        :param doc_id: O ID único do documento no Elasticsearch.
-        :param data: O dicionário de dados a ser salvo.
+        :param doc_id: The unique document ID in Elasticsearch.
+        :param data: The dictionary of data to be saved.
         """
         try:
             response = self.es.update(
@@ -236,5 +236,5 @@ class ElasticClient:
             )
             return response
         except Exception as e:
-            print(f"Erro ao fazer upsert do documento {doc_id} no Elasticsearch: {e}")
+            print(f"Error upserting document {doc_id} in Elasticsearch: {e}")
             return None
