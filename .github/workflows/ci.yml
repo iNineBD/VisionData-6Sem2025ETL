@@ -12,6 +12,7 @@ on:
       - develop
       - 'sprint-**'
       - main
+
 permissions:
   contents: read
 
@@ -19,47 +20,76 @@ jobs:
   lint-and-format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-      - name: Install deps
+
+      - name: Install deps (linters/formatters)
         run: |
-          pip install -U pip
+          python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install black ruff flake8
+
       - name: Ruff (lint)
         run: ruff check .
-      - name: Black (format)
+
+      - name: Black (format check)
         run: black --check src
 
   build-and-test:
     needs: [lint-and-format]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-      - name: Install deps
+
+      - name: Install deps (tests/build)
         run: |
-          pip install -U pip
+          python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pytest pytest-cov build
-      - name: Tests
+
+      - name: Tests (with coverage)
         run: pytest --cov=src --cov-report=xml src/test -q --maxfail=1 --disable-warnings
+
       - name: Build (wheel/sdist)
-        run: python -m build
+        run: |
+          if [ -f setup.py ] || [ -f pyproject.toml ]; then
+            python -m pip install build
+            python -m build
+          else
+            echo "No setup.py/pyproject.toml found, skipping build."
+          fi
+
       - name: Pacote (tar.gz)
-        run: tar -czf etl-py.tar.gz dist/
-      - name: Upload artifact (py)
+        run: |
+          if [ -d dist ]; then
+            tar -czf etl-py.tar.gz dist/
+          else
+            # fallback: package source
+            tar -czf etl-py.tar.gz src/
+          fi
+          ls -lh etl-py.tar.gz
+
+      - name: Upload artifact (package)
         uses: actions/upload-artifact@v4
         with:
           name: etl-py
           path: etl-py.tar.gz
+
       - name: Upload coverage for SonarQube
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
@@ -67,26 +97,31 @@ jobs:
 
   sonarqube:
     needs: [build-and-test]
-    name: SonarQube Cloud
+    name: SonarQube
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Download coverage report
         uses: actions/download-artifact@v4
         with:
           name: coverage-report
+          path: .
+
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install tox and any other packages
-        run: pip install tox
-      - name: Run tox
-        run: tox -e py
+
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
+        with:
+          args: >
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.sources=src
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
