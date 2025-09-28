@@ -1,146 +1,153 @@
 name: CD-Etl
 
 on:
-
   workflow_run:
     workflows: ["CI-Etl"]
-    types: [completed]
+    types:
+      - completed
+    branches:
+      - main
 
 env:
-  PYTHON_VERSION: '3.11'
+  DOCKERHUB_ENABLED: 'true'
+  IMAGE_NAME: inineapi/visiondata-etl
   TAG: ${{ github.sha }}
 
-concurrency:
-  group: cd-${{ github.ref }}
-  cancel-in-progress: false
-
-permissions:
-  contents: read
-
 jobs:
-  build-package:
-    name: Build & Package (Python)
+  gather-artifacts:
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Baixa pacote Python
+        uses: actions/download-artifact@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          name: etl-py
+          run-id: ${{ github.event.workflow_run.id }}
+          path: ./dist
 
-      - name: Cache pip
-        uses: actions/cache@v4
+      - name: Baixa cobertura
+        uses: actions/download-artifact@v4
         with:
-          path: ~/.cache/pip
-          key: pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
+          name: coverage-report
+          run-id: ${{ github.event.workflow_run.id }}
+          path: ./coverage
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: SonarQube Quality Gate check
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
-      - name: Lint (optional - ignore if tools not installed)
-        continue-on-error: true
+      - name: List artifacts
         run: |
-          if command -v flake8 >/dev/null 2>&1; then flake8 src || true; fi
+          echo "Listing dist:"
+          ls -la ./dist || echo "dist not found"
+          echo "Listing coverage:"
+          ls -la ./coverage || echo "coverage not found"
 
-      - name: Quick import smoke test
+      - name: Compacta todos (bundle)
         run: |
-          python - <<'PY'
-          import os, sys
-          print('Python OK, version:', sys.version)
-          expected=["config","entities","process","services","utils"]
-          missing=[d for d in expected if not os.path.isdir(os.path.join('src',d))]
-          if missing:
-              print('WARN: Missing folders:', missing)
-          PY
-
-      - name: Build package if pyproject or setup exists
-        run: |
-          if [ -f pyproject.toml ] || [ -f setup.py ]; then
-            python -m pip install build
-            python -m build
-            echo "Built via build module."
-          else
-            echo "No pyproject.toml or setup.py found. Skipping build."
-          fi
-
-      - name: Empacotar fonte (tar)
-        run: |
-          TAR=pack-visiondata.tar.gz
-          echo "Generating ${TAR}"
-          # prefer including dist if present, otherwise include src and metadata
-          if [ -d dist ]; then
-            tar -czf ${TAR} dist/ src requirements.txt README.md 2>/dev/null || tar -czf ${TAR} dist/ src
-          else
-            tar -czf ${TAR} src requirements.txt README.md 2>/dev/null || tar -czf ${TAR} src
-          fi
-          ls -lh ${TAR}
+          mkdir -p bundle
+          cp -r dist bundle/ 2>/dev/null || echo "No dist to copy"
+          cp -r coverage bundle/ 2>/dev/null || echo "No coverage to copy"
+          tar -czf pack-visiondata-etl.tar.gz -C bundle .
 
       - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
-          name: pack-visiondata
-          path: pack-visiondata.tar.gz
-          retention-days: 7
+          name: pack-visiondata-etl
+          path: pack-visiondata-etl.tar.gz
 
-      - name: Upload wheel (if built)
-        if: ${{ always() && (hashFiles('pyproject.toml') != '' || hashFiles('setup.py') != '') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-wheel
-          path: dist/*.whl
-          retention-days: 7
-
-  deploy-dev:
-    needs: [build-package]
+  docker-build-push:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'develop' }}
+    needs: [gather-artifacts]
     steps:
-      - name: Download bundle
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: pack-visiondata
+          name: pack-visiondata-etl
           path: .
-      - name: Deploy DEV (example)
-        run: |
-          echo "Unpacking package and simulating deploy to DEV"
-          tar -xzf pack-visiondata.tar.gz
-          ls -R src | head -50
 
-  deploy-qa:
-    needs: [build-package]
-    runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'sprint-') }}
-    steps:
-      - name: Download bundle
-        uses: actions/download-artifact@v4
-        with:
-          name: pack-visiondata
-          path: .
-      - name: Deploy QA (Homolog)
+      - name: Extract build artifacts
         run: |
-          echo "Deploy QA/Homolog."
-          tar -xzf pack-visiondata.tar.gz
-          ls -R src | head -50
+          mkdir -p extracted
+          tar -xzf pack-visiondata-etl.tar.gz -C extracted/
+          ls -la extracted/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ env.TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy-staging:
-    needs: [build-package]
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    needs: [docker-build-push]
+    environment:
+      name: staging
     steps:
-      - name: Download bundle
-        uses: actions/download-artifact@v4
-        with:
-          name: pack-visiondata
-          path: .
       - name: Deploy Staging
         run: |
-          echo "Deploy Staging."
-          tar -xzf pack-visiondata.tar.gz
-          ls -R src | head -50
+          echo "Deploy Staging with Docker image: ${{ env.IMAGE_NAME }}:${{ env.TAG }}"
+          echo "ETL will be available at staging environment"
+
+  deploy-prod:
+    runs-on: self-hosted
+    needs: [docker-build-push]
+    environment:
+      name: production
+      url: https://visiondata.ininetech.com.br
+    steps:
+      - name: Deploy Produção via Docker
+        run: |
+          echo "Deploying Docker image: ${{ env.IMAGE_NAME }}:${{ env.TAG }}"
+
+          # Pull da nova imagem
+          docker pull ${{ env.IMAGE_NAME }}:${{ env.TAG }}
+
+          # Parar e remover container antigo
+          docker stop visiondata-etl || true
+          docker rm visiondata-etl || true
+
+          # Criar diretórios no host se não existirem
+          mkdir -p /home/dev/visiondata-etl/logs
+          mkdir -p /home/dev/visiondata-etl/data
+          mkdir -p /home/dev/visiondata-etl/config
+
+          # Rodar novo container com todas as configurações
+          docker run -d \
+            --name visiondata-etl \
+            --restart unless-stopped \
+            --env-file /home/dev/visiondata-etl/.env \
+            -v /home/dev/visiondata-etl/logs:/app/logs:rw \
+            -v /home/dev/visiondata-etl/data:/app/data:rw \
+            -v /home/dev/visiondata-etl/config:/app/config:ro \
+            -e PYTHONPATH=/app \
+            -e ENVIRONMENT=production \
+            -e LOG_DIR=/app/logs \
+            ${{ env.IMAGE_NAME }}:${{ env.TAG }}
+
+          # Verificar se o container está rodando
+          docker ps | grep visiondata-etl
+          docker logs visiondata-etl --tail 10
+
+          echo "ETL deploy completed successfully!"
