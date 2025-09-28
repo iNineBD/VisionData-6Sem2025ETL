@@ -1,0 +1,51 @@
+services:
+  visiondata-etl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: visiondata-etl
+    restart: unless-stopped
+    environment:
+      # Application Config
+      - APPLICATION_NAME=${APPLICATION_NAME:-VisionData-ETL}
+
+      # Logger Config
+      - LOGGER_LEVEL=${LOGGER_LEVEL:-INFO}
+      - LOGGER_FILE=${LOGGER_FILE:-etl_output}
+      - LOGGER_OUTPUT=${LOGGER_OUTPUT:-CONSOLE}
+
+      # Elasticsearch Config
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      - ELASTICSEARCH_INDEX=${ELASTICSEARCH_INDEX}
+      - ELASTICSEARCH_USER=${ELASTICSEARCH_USER}
+      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD}
+
+      # Database Config
+      - DB_NAME=${DB_NAME}
+      - DB_HOST=${DB_HOST}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_PORT=${DB_PORT:-5432}
+
+      # Scheduling Config
+      - SCHEDULE_TIME=${SCHEDULE_TIME:-00:00}
+
+      # Docker specific
+      - PYTHONPATH=/app
+      - ENVIRONMENT=production
+
+    volumes:
+      # Persist logs
+      - etl-logs:/app/logs
+      # Mount .env file
+      - ./.env:/app/.env:ro
+
+    networks:
+      - etl-network
+
+volumes:
+  etl-logs:
+
+networks:
+  etl-network:
+    driver: bridge
