@@ -1,4 +1,3 @@
-import os
 from typing import Dict, List
 
 import aspectlib
@@ -14,12 +13,6 @@ logger = setup_logger(__name__)
 class LoadDwService:
     def __init__(self, db_connection: DBConnector):
         self.db = db_connection
-        self.schema = os.getenv("DW_SCHEMA")
-
-    def _get_table_name_with_schema(self, table_name: str) -> str:
-        if self.schema:
-            return f"[{self.schema}].[{table_name}]"
-        return f"[{table_name}]"
 
     def load(self, transformed_data: Dict[str, pd.DataFrame]):
         dimension_mappings = [
@@ -65,7 +58,7 @@ class LoadDwService:
                 and not transformed_data[table_name].empty
             ):
                 df = transformed_data[table_name].copy()
-                full_table_name = self._get_table_name_with_schema(table_name)
+                full_table_name = table_name
                 self._load_dimension(
                     df=df,
                     table_name=full_table_name,
@@ -155,7 +148,7 @@ class LoadDwService:
         sk_column: str,
         business_keys: list,
     ) -> pd.DataFrame:
-        table_name = self._get_table_name_with_schema(dim_table)
+        table_name = dim_table
         placeholders = ", ".join(["?"] * len(business_keys))
 
         query = f"SELECT DISTINCT [{bk_column}] as bk, [{sk_column}] as sk FROM {table_name} WHERE [{bk_column}] IN ({placeholders})"
@@ -169,7 +162,7 @@ class LoadDwService:
         return pd.DataFrame(columns=[bk_column, sk_column])
 
     def _load_fact_tickets(self, df: pd.DataFrame):
-        fact_table = self._get_table_name_with_schema("Fact_Tickets")
+        fact_table = "Fact_Tickets"
         temp_fact_table = "##Fact_Tickets_temp"
         logger.info(
             f"Starting load for fact table {fact_table}. Total of {len(df)} records."

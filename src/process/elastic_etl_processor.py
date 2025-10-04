@@ -1,3 +1,4 @@
+import os
 import time
 
 import aspectlib
@@ -14,7 +15,9 @@ logger = setup_logger(__name__)
 
 class ElasticEtlProcessor:
     def __init__(self):
-        self.db_connector = DBConnector()
+        db_name = os.getenv("CLIENT_DB_NAME")
+
+        self.db_connector = DBConnector(db_name=db_name)
         self.db_connector.connect()
         self.elastic_client = ElasticClient()
         self.transformed_data = None
@@ -57,9 +60,9 @@ class ElasticEtlProcessor:
 
     def execute(self):
         extracted = self.extract_data()
+        self.db_connector.close()
         self.transform_data(extracted)
         self.load_data()
-        self.db_connector.close()
 
 
 aspectlib.weave(ElasticEtlProcessor, log_execution)
