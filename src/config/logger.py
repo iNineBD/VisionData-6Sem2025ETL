@@ -37,14 +37,17 @@ def setup_logger(logger_name):
     logger_output = os.getenv("LOGGER_OUTPUT", "CONSOLE").split(",")
 
     if "FILE" in logger_output:
+        log_dir = os.path.join(os.getcwd(), "log")
+        os.makedirs(log_dir, exist_ok=True)
         log_filename_base = os.getenv("LOGGER_FILE", "app.log")
         file_name, file_extension = os.path.splitext(log_filename_base)
         log_filename = (
             f"{file_name}_{datetime.now().strftime('%Y-%m-%d')}{file_extension}"
         )
+        log_path = os.path.join(log_dir, log_filename)
 
         fh = RotatingFileHandler(
-            log_filename, maxBytes=10 * 1024 * 1024, backupCount=500, encoding="utf-8"
+            log_path, maxBytes=10 * 1024 * 1024, backupCount=500, encoding="utf-8"
         )
         fh.setFormatter(console_formatter)
         logger.addHandler(fh)

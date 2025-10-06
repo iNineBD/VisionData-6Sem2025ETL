@@ -1,3 +1,4 @@
+import os
 import time
 
 import aspectlib
@@ -14,18 +15,26 @@ logger = setup_logger(__name__)
 
 class DwEtlProcessor:
     def __init__(self):
-        self.db_source_connector = DBConnector()
-        self.db_source_connector.connect()
+        db_client = os.getenv("CLIENT_DB_NAME")
+        dw_db = os.getenv("DW_DB_NAME")
 
-        self.extract_service = ExtractDwService(db_connection=self.db_source_connector)
+        self.db_client = DBConnector(db_name=db_client)
+        self.db_client.connect()
+
+        self.extract_service = ExtractDwService(db_connection=self.db_client)
         self.transform_service = TransformDwService()
-        self.load_service = LoadDwService(db_connection=self.db_source_connector)
+
+        self.dw_db = DBConnector(db_name=dw_db)
+        self.dw_db.connect()
+
+        self.load_service = LoadDwService(db_connection=self.dw_db)
 
     def extract_data(self):
         logger.info("DW ETL: Extracting data from source")
         time.sleep(2)
         raw_data = self.extract_service.extract_complete_tickets_data()
         logger.info("DW ETL: Data extraction completed")
+        self.db_client.close()
         return raw_data
 
     def transform_data(self, extracted_data):
@@ -54,7 +63,7 @@ class DwEtlProcessor:
             else:
                 logger.info("DW ETL: No data extracted to process.")
         finally:
-            self.db_source_connector.close()
+            self.dw_db.close()
 
 
 aspectlib.weave(DwEtlProcessor, log_execution)
