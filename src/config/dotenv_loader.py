@@ -11,10 +11,10 @@ def get_env_path():
         base_path = os.getcwd()
         fallback = os.path.dirname(os.path.abspath(__file__))
 
-        if not os.path.exists(os.path.join(base_path, "production.env")):
+        if not os.path.exists(os.path.join(base_path, "development.env")):
             base_path = fallback
 
-    return os.path.join(base_path, "production.env")
+    return os.path.join(base_path, "development.env")
 
 
 def load_default_env():

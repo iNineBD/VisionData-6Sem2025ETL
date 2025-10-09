@@ -17,6 +17,12 @@ class LoadDwService:
     def load(self, transformed_data: Dict[str, pd.DataFrame]):
         dimension_mappings = [
             (
+                "Dim_Dates",
+                None,
+                None,
+                ["Year", "Month", "Day", "Hour", "Minute"],
+            ),
+            (
                 "Dim_Companies",
                 "CompanyId_BK",
                 "CompanyId_BK",
@@ -87,7 +93,12 @@ class LoadDwService:
         )
 
         try:
-            cols_to_insert = [business_key_col] + columns_to_update
+            # Se business_key_col for None, só usa columns_to_update
+            if business_key_col is None:
+                cols_to_insert = columns_to_update
+            else:
+                cols_to_insert = [business_key_col] + columns_to_update
+
             df_dim = df[cols_to_insert].drop_duplicates()
 
             self.db.execute_query(
@@ -106,26 +117,38 @@ class LoadDwService:
 
             logger.info("Starting MERGE operation from temporary table.")
 
-            update_clause = ""
-            if columns_to_update:
-                update_set = ", ".join(
-                    [f"Target.[{col}] = Source.[{col}]" for col in columns_to_update]
-                )
-                update_clause = f"WHEN MATCHED THEN UPDATE SET {update_set}"
+            if business_key_col is None:
+                # Para Dim_Dates, faz apenas INSERT ignorando MERGE/UPDATE
+                insert_cols = ", ".join([f"[{c}]" for c in columns_to_update])
+                source_cols = ", ".join([f"[{c}]" for c in columns_to_update])
+                merge_sql = f"""
+                INSERT INTO {table_name} ({insert_cols})
+                SELECT {source_cols} FROM {temp_table_name};
+                """
+            else:
+                update_clause = ""
+                if columns_to_update:
+                    update_set = ", ".join(
+                        [
+                            f"Target.[{col}] = Source.[{col}]"
+                            for col in columns_to_update
+                        ]
+                    )
+                    update_clause = f"WHEN MATCHED THEN UPDATE SET {update_set}"
 
-            insert_cols_list = [business_key_col] + columns_to_update
-            insert_cols = ", ".join([f"[{c}]" for c in insert_cols_list])
-            source_cols = ", ".join([f"Source.[{c}]" for c in insert_cols_list])
+                insert_cols_list = [business_key_col] + columns_to_update
+                insert_cols = ", ".join([f"[{c}]" for c in insert_cols_list])
+                source_cols = ", ".join([f"Source.[{c}]" for c in insert_cols_list])
 
-            merge_sql = f"""
-            MERGE {table_name} AS Target
-            USING {temp_table_name} AS Source
-            ON Target.[{business_key_col}] = Source.[{business_key_col}]
-            {update_clause}
-            WHEN NOT MATCHED BY Target THEN
-                INSERT ({insert_cols})
-                VALUES ({source_cols});
-            """
+                merge_sql = f"""
+                MERGE {table_name} AS Target
+                USING {temp_table_name} AS Source
+                ON Target.[{business_key_col}] = Source.[{business_key_col}]
+                {update_clause}
+                WHEN NOT MATCHED BY Target THEN
+                    INSERT ({insert_cols})
+                    VALUES ({source_cols});
+                """
 
             self.db.execute_query(merge_sql)
 
@@ -229,12 +252,16 @@ class LoadDwService:
                 "ProductKey",
                 "TagKey",
                 "ChannelKey",
+                "EntryDateKey",
+                "ClosedDateKey",
+                "FirstResponseDateKey",
                 "QtTickets",
             ]
-            if "TicketKey" in df_with_keys.columns:
-                df_to_insert = df_with_keys[final_columns].copy()
-            else:
-                df_to_insert = df_with_keys[final_columns].copy()
+
+            final_columns = [
+                col for col in final_columns if col in df_with_keys.columns
+            ]
+            df_to_insert = df_with_keys[final_columns].copy()
 
             cols_with_types = []
             for col in df_to_insert.columns:

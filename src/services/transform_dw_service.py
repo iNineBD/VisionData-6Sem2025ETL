@@ -14,6 +14,7 @@ class TransformDwService:
 
         tags_data = extracted_data.get("tags", {})
 
+        dim_dates = self._create_dim_dates(tickets_df)
         dim_companies = self._create_dim_companies(tickets_df)
         dim_users = self._create_dim_users(tickets_df)
         dim_agents = self._create_dim_agents(tickets_df)
@@ -26,6 +27,7 @@ class TransformDwService:
         fact_tickets = self._create_fact_tickets(tickets_df, tags_data)
 
         return {
+            "Dim_Dates": dim_dates,
             "Dim_Companies": dim_companies,
             "Dim_Users": dim_users,
             "Dim_Agents": dim_agents,
@@ -37,6 +39,42 @@ class TransformDwService:
             "Dim_Channel": dim_channel,
             "Fact_Tickets": fact_tickets,
         }
+
+    def _create_dim_dates(self, df: pd.DataFrame) -> pd.DataFrame:
+        date_cols = ["first_response_at", "created_at", "closed_at"]
+        dim_prep = pd.DataFrame()
+        for col in date_cols:
+            if col in df.columns:
+                temp = df[[col]].copy()
+                temp = temp.rename(columns={col: "datetime"})
+                dim_prep = pd.concat([dim_prep, temp], ignore_index=True)
+        dim_prep = (
+            dim_prep.dropna(subset=["datetime"])
+            .drop_duplicates()
+            .reset_index(drop=True)
+        )
+
+        dim_prep["datetime"] = pd.to_datetime(dim_prep["datetime"], errors="coerce")
+        dim_prep = dim_prep.dropna(subset=["datetime"]).reset_index(drop=True)
+
+        dim_prep["Year"] = dim_prep["datetime"].dt.year
+        dim_prep["Month"] = dim_prep["datetime"].dt.month
+        dim_prep["Day"] = dim_prep["datetime"].dt.day
+        dim_prep["Hour"] = dim_prep["datetime"].dt.hour
+        dim_prep["Minute"] = dim_prep["datetime"].dt.minute
+
+        dim = (
+            dim_prep[["Year", "Month", "Day", "Hour", "Minute"]]
+            .drop_duplicates()
+            .reset_index(drop=True)
+        )
+        dim.index = dim.index + 1
+        return dim
+
+    def _create_dim_channel(self, df: pd.DataFrame) -> pd.DataFrame:
+        dim = df[["channel"]].copy().dropna().drop_duplicates()
+        dim.rename(columns={"channel": "ChannelName"}, inplace=True)
+        return dim.reset_index(drop=True)
 
     def _create_dim_companies(self, df: pd.DataFrame) -> pd.DataFrame:
         dim = df[
@@ -128,13 +166,30 @@ class TransformDwService:
         df = pd.DataFrame(list(all_tags.items()), columns=["TagId_BK", "Name"])
         return df
 
-    def _create_dim_channel(self, df: pd.DataFrame) -> pd.DataFrame:
-        dim = df[["channel"]].copy().dropna().drop_duplicates()
-        dim.rename(columns={"channel": "ChannelName"}, inplace=True)
-        return dim.reset_index(drop=True)
+    def _get_date_key(self, dt, dim_dates):
+        import pandas as pd
+
+        if pd.isna(dt) or dim_dates is None:
+            return None
+        dt = pd.to_datetime(dt, errors="coerce")
+        if pd.isna(dt):
+            return None
+        match = dim_dates[
+            (dim_dates["Year"] == dt.year)
+            & (dim_dates["Month"] == dt.month)
+            & (dim_dates["Day"] == dt.day)
+            & (dim_dates["Hour"] == dt.hour)
+            & (dim_dates["Minute"] == dt.minute)
+        ]
+        if not match.empty:
+            return match.index[0]
+        return None
 
     def _create_fact_tickets(
-        self, df: pd.DataFrame, tags_data: Dict[str, List[Dict]]
+        self,
+        df: pd.DataFrame,
+        tags_data: Dict[str, List[Dict]],
+        dim_dates: pd.DataFrame = None,
     ) -> pd.DataFrame:
         ticket_to_tags_map = {
             ticket_id: [tag.get("tag_id") for tag in tags]
@@ -162,6 +217,9 @@ class TransformDwService:
                 "product_id",
                 "channel",
                 "TagId_BK",
+                "created_at",
+                "closed_at",
+                "first_response_at",
             ]
         ].copy()
 
@@ -180,7 +238,18 @@ class TransformDwService:
             inplace=True,
         )
 
+        fact["EntryDateKey"] = fact["created_at"].apply(
+            lambda x: self._get_date_key(x, dim_dates)
+        )
+        fact["ClosedDateKey"] = fact["closed_at"].apply(
+            lambda x: self._get_date_key(x, dim_dates)
+        )
+        fact["FirstResponseDateKey"] = fact["first_response_at"].apply(
+            lambda x: self._get_date_key(x, dim_dates)
+        )
+
         fact["QtTickets"] = 1
+        fact = fact.drop(columns=["created_at", "closed_at", "first_response_at"])
         return fact.reset_index(drop=True)
 
 
