@@ -1,6 +1,7 @@
 import os
 
 from elasticsearch import Elasticsearch
+from elasticsearch.helpers import bulk
 
 from .logger import setup_logger
 
@@ -218,23 +219,42 @@ class ElasticClient:
         else:
             logger.info(f"[ElasticClient] Index '{self.elastic_index}' already exists.")
 
-    def upsert_document(self, doc_id, data):
+    def bulk_upsert(self, documents):
         """
-        Performs an 'update' or 'insert' (upsert) operation.
+        Performs a bulk 'upsert' operation using the Elasticsearch bulk helper.
+        """
+        actions = []
+        for doc in documents:
+            doc_id = doc.get("ticket_id")
+            if not doc_id:
+                logger.warning(f"Document without ticket_id found, skipping: {doc}")
+                continue
 
-        :param doc_id: The unique document ID in Elasticsearch.
-        :param data: The dictionary of data to be saved.
-        """
+            action = {
+                "_op_type": "update",
+                "_index": self.elastic_index,
+                "_id": doc_id,
+                "doc": doc,
+                "doc_as_upsert": True,
+            }
+            actions.append(action)
+
+        if not actions:
+            logger.info("No actions to perform for bulk upsert.")
+            return True, []
+
         try:
-            response = self.es.update(
-                index=self.elastic_index,
-                id=doc_id,
-                body={
-                    "doc": data,
-                    "doc_as_upsert": True,
-                },
+            success, errors = bulk(
+                self.es, actions, raise_on_error=False, raise_on_exception=False
             )
-            return response
+            logger.info(
+                f"Bulk operation completed. Successes: {success}, Failures: {len(errors)}"
+            )
+            if errors:
+                logger.error(f"Bulk upsert failures: {errors[:5]}")
+            return success, errors
         except Exception as e:
-            print(f"Error upserting document {doc_id} in Elasticsearch: {e}")
-            return None
+            logger.error(
+                f"An exception occurred during bulk upsert: {e}", exc_info=True
+            )
+            return False, [str(e)]

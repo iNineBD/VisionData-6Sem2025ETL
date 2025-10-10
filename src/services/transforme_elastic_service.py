@@ -1,80 +1,40 @@
-import json
-from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import aspectlib
+import pandas as pd
 
 from config.aop_logging import log_execution
 
 
 class TransformeElasticService:
-    """Service responsible for transforming ticket data to Elasticsearch format"""
+    """Service responsible for transforming ticket data to Elasticsearch format using optimized, vectorized operations."""
 
     @staticmethod
-    def _format_datetime(dt) -> Optional[str]:
-        """Formats datetime to Elasticsearch standard"""
-        if dt is None:
-            return None
-        if isinstance(dt, str):
-            return dt
-        if hasattr(dt, "strftime"):
-            return dt.strftime("%Y-%m-%d %H:%M:%S")
-        return str(dt)
+    def _calculate_sla_metrics(df: pd.DataFrame) -> pd.DataFrame:
+        """Calculates SLA metrics in a vectorized way."""
+        created_at = pd.to_datetime(df["created_at"], errors="coerce")
+        first_response_at = pd.to_datetime(df["first_response_at"], errors="coerce")
+        closed_at = pd.to_datetime(df["closed_at"], errors="coerce")
+
+        first_response_time = (first_response_at - created_at).dt.total_seconds() / 60
+        resolution_time = (closed_at - created_at).dt.total_seconds() / 60
+
+        metrics = pd.DataFrame(index=df.index)
+        metrics["first_response_time_minutes"] = first_response_time.fillna(0).astype(
+            int
+        )
+        metrics["resolution_time_minutes"] = resolution_time.fillna(0).astype(int)
+
+        metrics["first_response_sla_breached"] = (
+            first_response_time > df["sla_first_response_mins"]
+        )
+        metrics["resolution_sla_breached"] = resolution_time > df["sla_resolution_mins"]
+
+        return metrics.to_dict("records")
 
     @staticmethod
-    def _calculate_sla_metrics(ticket: Dict) -> Dict:
-        """Calculates SLA metrics based on ticket data"""
-        metrics = {
-            "first_response_time_minutes": None,
-            "resolution_time_minutes": None,
-            "first_response_sla_breached": False,
-            "resolution_sla_breached": False,
-        }
-
-        created_at = ticket.get("created_at")
-        first_response_at = ticket.get("first_response_at")
-        closed_at = ticket.get("closed_at")
-        sla_first_response_mins = ticket.get("sla_first_response_mins")
-        sla_resolution_mins = ticket.get("sla_resolution_mins")
-
-        def parse_datetime(dt):
-            if dt is None:
-                return None
-            if isinstance(dt, str):
-                try:
-                    return datetime.strptime(dt, "%Y-%m-%d %H:%M:%S")
-                except ValueError:
-                    return None
-            return dt
-
-        created_at = parse_datetime(created_at)
-        first_response_at = parse_datetime(first_response_at)
-        closed_at = parse_datetime(closed_at)
-
-        if created_at and first_response_at:
-            first_response_time = (first_response_at - created_at).total_seconds() / 60
-            metrics["first_response_time_minutes"] = int(first_response_time)
-
-            if (
-                sla_first_response_mins
-                and first_response_time > sla_first_response_mins
-            ):
-                metrics["first_response_sla_breached"] = True
-
-        if created_at and closed_at:
-            resolution_time = (closed_at - created_at).total_seconds() / 60
-            metrics["resolution_time_minutes"] = int(resolution_time)
-
-            if sla_resolution_mins and resolution_time > sla_resolution_mins:
-                metrics["resolution_sla_breached"] = True
-
-        return metrics
-
-    @staticmethod
-    def _create_search_text(ticket: Dict) -> str:
-        """Creates search text by combining relevant fields"""
-        search_parts = []
-
+    def _create_search_text(df: pd.DataFrame) -> pd.Series:
+        """Creates search text by combining relevant fields in a vectorized way."""
         text_fields = [
             "title",
             "description",
@@ -86,191 +46,109 @@ class TransformeElasticService:
             "subcategory_name",
         ]
 
-        for field in text_fields:
-            value = ticket.get(field)
-            if value and isinstance(value, str) and value.strip():
-                search_parts.append(value.strip())
-
-        return " ".join(search_parts)
-
-    @staticmethod
-    def _transform_attachments(attachments: List[Dict]) -> List[Dict]:
-        """Transforms attachments to Elasticsearch format"""
-        transformed = []
-        for attachment in attachments:
-            transformed_attachment = {
-                "id": attachment.get("id"),
-                "filename": attachment.get("filename"),
-                "mime_type": attachment.get("mime_type"),
-                "size_bytes": attachment.get("size_bytes"),
-                "storage_path": attachment.get("storage_path"),
-                "uploaded_at": TransformeElasticService._format_datetime(
-                    attachment.get("uploaded_at")
-                ),
-            }
-            transformed.append(transformed_attachment)
-        return transformed
-
-    @staticmethod
-    def _transform_status_history(history: List[Dict]) -> List[Dict]:
-        """Transforms status history to Elasticsearch format"""
-        transformed = []
-        for status in history:
-            transformed_status = {
-                "from_status": status.get("from_status"),
-                "to_status": status.get("to_status"),
-                "changed_at": TransformeElasticService._format_datetime(
-                    status.get("changed_at")
-                ),
-                "changed_by_agent_id": status.get("changed_by_agent_id"),
-                "changed_by_agent_name": status.get("changed_by_agent_name"),
-            }
-            transformed.append(transformed_status)
-        return transformed
-
-    @staticmethod
-    def _transform_audit_logs(logs: List[Dict]) -> List[Dict]:
-        """Transforms audit logs to Elasticsearch format"""
-        transformed = []
-        for log in logs:
-            details = log.get("details")
-            if isinstance(details, str):
-                try:
-                    details = json.loads(details)
-                except json.JSONDecodeError:
-                    details = {}
-            elif details is None:
-                details = {}
-
-            transformed_log = {
-                "entity_type": log.get("entity_type"),
-                "entity_id": log.get("entity_id"),
-                "operation": log.get("operation"),
-                "performed_by": log.get("performed_by"),
-                "performed_at": TransformeElasticService._format_datetime(
-                    log.get("performed_at")
-                ),
-                "details": details,
-            }
-            transformed.append(transformed_log)
-        return transformed
-
-    @staticmethod
-    def _transform_single_ticket(ticket: Dict, related_data: Dict) -> Dict:
-        """
-        Transforms a single ticket to Elasticsearch format
-
-        Args:
-            ticket: Ticket data
-            related_data: Dictionary with related data (attachments, tags, etc.)
-
-        Returns:
-            Document formatted for Elasticsearch
-        """
-        ticket_id = str(ticket["ticket_id"])
-
-        attachments = related_data.get("attachments", {}).get(ticket_id, [])
-        tags = related_data.get("tags", {}).get(ticket_id, [])
-        status_history = related_data.get("status_history", {}).get(ticket_id, [])
-        audit_logs = related_data.get("audit_logs", {}).get(ticket_id, [])
-
-        es_document = {
-            "ticket_id": ticket_id,
-            "title": ticket.get("title"),
-            "description": ticket.get("description"),
-            "channel": ticket.get("channel"),
-            "device": ticket.get("device"),
-            "current_status": ticket.get("current_status"),
-            "sla_plan": ticket.get("sla_plan"),
-            "priority": ticket.get("priority"),
-            "dates": {
-                "created_at": TransformeElasticService._format_datetime(
-                    ticket.get("created_at")
-                ),
-                "first_response_at": TransformeElasticService._format_datetime(
-                    ticket.get("first_response_at")
-                ),
-                "closed_at": TransformeElasticService._format_datetime(
-                    ticket.get("closed_at")
-                ),
-            },
-            "company": {
-                "id": ticket.get("company_id"),
-                "name": ticket.get("company_name"),
-                "cnpj": ticket.get("company_cnpj"),
-                "segment": ticket.get("company_segment"),
-            },
-            "created_by_user": {
-                "id": ticket.get("user_id"),
-                "full_name": ticket.get("user_full_name"),
-                "email": ticket.get("user_email"),
-                "phone": ticket.get("user_phone"),
-                "cpf": ticket.get("user_cpf"),
-                "is_vip": bool(ticket.get("user_is_vip", False)),
-            },
-            "assigned_agent": {
-                "id": ticket.get("agent_id"),
-                "full_name": ticket.get("agent_full_name"),
-                "email": ticket.get("agent_email"),
-                "department": ticket.get("agent_department"),
-            },
-            "product": {
-                "id": ticket.get("product_id"),
-                "name": ticket.get("product_name"),
-                "code": ticket.get("product_code"),
-                "description": ticket.get("product_description"),
-            },
-            "category": {
-                "id": ticket.get("category_id"),
-                "name": ticket.get("category_name"),
-            },
-            "subcategory": {
-                "id": ticket.get("subcategory_id"),
-                "name": ticket.get("subcategory_name"),
-            },
-            "attachments": TransformeElasticService._transform_attachments(attachments),
-            "tags": tags,
-            "status_history": TransformeElasticService._transform_status_history(
-                status_history
-            ),
-            "audit_logs": TransformeElasticService._transform_audit_logs(audit_logs),
-            "sla_metrics": TransformeElasticService._calculate_sla_metrics(ticket),
-            "search_text": TransformeElasticService._create_search_text(ticket),
-        }
-
-        return es_document
+        return df[text_fields].fillna("").agg(" ".join, axis=1)
 
     @staticmethod
     def transform_tickets_batch(extracted_data: Dict) -> List[Dict]:
         """
-        Transforms batch of extracted tickets to Elasticsearch format
-
-        Args:
-            extracted_data: Data extracted by TicketExtractService
-
-        Returns:
-            List of documents formatted for Elasticsearch
+        Transforms a batch of extracted tickets to Elasticsearch format using Pandas for high performance.
         """
         tickets = extracted_data.get("tickets", [])
-
         if not tickets:
             return []
 
-        related_data = {
-            "attachments": extracted_data.get("attachments", {}),
-            "tags": extracted_data.get("tags", {}),
-            "status_history": extracted_data.get("status_history", {}),
-            "audit_logs": extracted_data.get("audit_logs", {}),
-        }
+        df = pd.DataFrame(tickets)
+        df["ticket_id_str"] = df["ticket_id"].astype(str)
 
-        transformed_documents = []
-        for ticket in tickets:
-            es_document = TransformeElasticService._transform_single_ticket(
-                ticket, related_data
+        attachments_map = extracted_data.get("attachments", {})
+        tags_map = extracted_data.get("tags", {})
+        status_history_map = extracted_data.get("status_history", {})
+        audit_logs_map = extracted_data.get("audit_logs", {})
+
+        df["sla_metrics"] = TransformeElasticService._calculate_sla_metrics(df)
+        df["search_text"] = TransformeElasticService._create_search_text(df)
+
+        for col in ["created_at", "first_response_at", "closed_at"]:
+            df[col] = (
+                pd.to_datetime(df[col], errors="coerce")
+                .dt.strftime("%Y-%m-%d %H:%M:%S")
+                .fillna(None)
             )
-            transformed_documents.append(es_document)
 
-        return transformed_documents
+        def map_and_clean(series, mapping):
+            mapped_series = series.map(mapping)
+            return [d if isinstance(d, list) else [] for d in mapped_series]
+
+        df["attachments_list"] = map_and_clean(df["ticket_id_str"], attachments_map)
+        df["tags_list"] = map_and_clean(df["ticket_id_str"], tags_map)
+        df["status_history_list"] = map_and_clean(
+            df["ticket_id_str"], status_history_map
+        )
+        df["audit_logs_list"] = map_and_clean(df["ticket_id_str"], audit_logs_map)
+
+        docs = df.to_dict("records")
+
+        final_documents = []
+        for doc in docs:
+            final_documents.append(
+                {
+                    "ticket_id": doc.get("ticket_id_str"),
+                    "title": doc.get("title"),
+                    "description": doc.get("description"),
+                    "channel": doc.get("channel"),
+                    "device": doc.get("device"),
+                    "current_status": doc.get("current_status"),
+                    "sla_plan": doc.get("sla_plan"),
+                    "priority": doc.get("priority"),
+                    "dates": {
+                        "created_at": doc.get("created_at"),
+                        "first_response_at": doc.get("first_response_at"),
+                        "closed_at": doc.get("closed_at"),
+                    },
+                    "company": {
+                        "id": doc.get("company_id"),
+                        "name": doc.get("company_name"),
+                        "cnpj": doc.get("company_cnpj"),
+                        "segment": doc.get("company_segment"),
+                    },
+                    "created_by_user": {
+                        "id": doc.get("user_id"),
+                        "full_name": doc.get("user_full_name"),
+                        "email": doc.get("user_email"),
+                        "phone": doc.get("user_phone"),
+                        "cpf": doc.get("user_cpf"),
+                        "is_vip": bool(doc.get("user_is_vip", False)),
+                    },
+                    "assigned_agent": {
+                        "id": doc.get("agent_id"),
+                        "full_name": doc.get("agent_full_name"),
+                        "email": doc.get("agent_email"),
+                        "department": doc.get("agent_department"),
+                    },
+                    "product": {
+                        "id": doc.get("product_id"),
+                        "name": doc.get("product_name"),
+                        "code": doc.get("product_code"),
+                        "description": doc.get("product_description"),
+                    },
+                    "category": {
+                        "id": doc.get("category_id"),
+                        "name": doc.get("category_name"),
+                    },
+                    "subcategory": {
+                        "id": doc.get("subcategory_id"),
+                        "name": doc.get("subcategory_name"),
+                    },
+                    "attachments": doc.get("attachments_list"),
+                    "tags": doc.get("tags_list"),
+                    "status_history": doc.get("status_history_list"),
+                    "audit_logs": doc.get("audit_logs_list"),
+                    "sla_metrics": doc.get("sla_metrics"),
+                    "search_text": doc.get("search_text"),
+                }
+            )
+
+        return final_documents
 
 
 aspectlib.weave(TransformeElasticService, log_execution)

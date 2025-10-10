@@ -3,7 +3,9 @@ from typing import Any, Dict, List
 import aspectlib
 import pandas as pd
 
-from config.aop_logging import log_execution
+from config.aop_logging import log_execution, setup_logger
+
+logger = setup_logger(__name__)
 
 
 class TransformDwService:
@@ -24,7 +26,8 @@ class TransformDwService:
         dim_priorities = self._create_dim_priorities(tickets_df)
         dim_tags = self._create_dim_tags(tags_data)
         dim_channel = self._create_dim_channel(tickets_df)
-        fact_tickets = self._create_fact_tickets(tickets_df, tags_data)
+
+        fact_tickets = self._create_fact_tickets(tickets_df, tags_data, dim_dates)
 
         return {
             "Dim_Dates": dim_dates,
@@ -161,29 +164,19 @@ class TransformDwService:
                 tag_name = tag_dict.get("tag_name")
                 if tag_id is not None:
                     all_tags[tag_id] = tag_name
+
         if not all_tags:
-            return pd.DataFrame(columns=["TagId_BK", "Name"])
-        df = pd.DataFrame(list(all_tags.items()), columns=["TagId_BK", "Name"])
+            df = pd.DataFrame(columns=["TagId_BK", "Name"])
+        else:
+            df = pd.DataFrame(list(all_tags.items()), columns=["TagId_BK", "Name"])
+
+        na_tag = pd.DataFrame([{"TagId_BK": "-1", "Name": "N/A"}])
+
+        df = pd.concat([df, na_tag], ignore_index=True).drop_duplicates(
+            subset=["TagId_BK"]
+        )
+
         return df
-
-    def _get_date_key(self, dt, dim_dates):
-        import pandas as pd
-
-        if pd.isna(dt) or dim_dates is None:
-            return None
-        dt = pd.to_datetime(dt, errors="coerce")
-        if pd.isna(dt):
-            return None
-        match = dim_dates[
-            (dim_dates["Year"] == dt.year)
-            & (dim_dates["Month"] == dt.month)
-            & (dim_dates["Day"] == dt.day)
-            & (dim_dates["Hour"] == dt.hour)
-            & (dim_dates["Minute"] == dt.minute)
-        ]
-        if not match.empty:
-            return match.index[0]
-        return None
 
     def _create_fact_tickets(
         self,
@@ -191,6 +184,8 @@ class TransformDwService:
         tags_data: Dict[str, List[Dict]],
         dim_dates: pd.DataFrame = None,
     ) -> pd.DataFrame:
+        logger.info("Starting creation of fact table...")
+
         ticket_to_tags_map = {
             ticket_id: [tag.get("tag_id") for tag in tags]
             for ticket_id, tags in tags_data.items()
@@ -198,7 +193,7 @@ class TransformDwService:
 
         df["TagId_BK_List"] = df["ticket_id"].astype(str).map(ticket_to_tags_map)
         df["TagId_BK_List"] = df["TagId_BK_List"].apply(
-            lambda x: x if (isinstance(x, list) and x) else [None]
+            lambda x: x if (isinstance(x, list) and x) else ["-1"]
         )
 
         fact_exploded = df.explode("TagId_BK_List").rename(
@@ -238,18 +233,41 @@ class TransformDwService:
             inplace=True,
         )
 
-        fact["EntryDateKey"] = fact["created_at"].apply(
-            lambda x: self._get_date_key(x, dim_dates)
+        logger.info("Optimizing date key lookups...")
+
+        dim_dates_with_key = dim_dates.reset_index().rename(
+            columns={"index": "DateKey"}
         )
-        fact["ClosedDateKey"] = fact["closed_at"].apply(
-            lambda x: self._get_date_key(x, dim_dates)
-        )
-        fact["FirstResponseDateKey"] = fact["first_response_at"].apply(
-            lambda x: self._get_date_key(x, dim_dates)
-        )
+
+        for date_col_name, new_key_name in [
+            ("created_at", "EntryDateKey"),
+            ("closed_at", "ClosedDateKey"),
+            ("first_response_at", "FirstResponseDateKey"),
+        ]:
+            temp_dates = pd.to_datetime(fact[date_col_name], errors="coerce")
+            fact_date_parts = pd.DataFrame(
+                {
+                    "Year": temp_dates.dt.year,
+                    "Month": temp_dates.dt.month,
+                    "Day": temp_dates.dt.day,
+                    "Hour": temp_dates.dt.hour,
+                    "Minute": temp_dates.dt.minute,
+                }
+            ).reset_index()
+
+            merged_keys = pd.merge(
+                fact_date_parts,
+                dim_dates_with_key,
+                on=["Year", "Month", "Day", "Hour", "Minute"],
+                how="left",
+            )
+
+            fact[new_key_name] = merged_keys.sort_values("index")["DateKey"]
 
         fact["QtTickets"] = 1
         fact = fact.drop(columns=["created_at", "closed_at", "first_response_at"])
+
+        logger.info("Fact table creation completed.")
         return fact.reset_index(drop=True)
 
 
