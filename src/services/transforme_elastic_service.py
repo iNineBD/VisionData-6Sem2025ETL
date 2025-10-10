@@ -10,7 +10,7 @@ class TransformeElasticService:
     """Service responsible for transforming ticket data to Elasticsearch format using optimized, vectorized operations."""
 
     @staticmethod
-    def _calculate_sla_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    def _calculate_sla_metrics(df: pd.DataFrame) -> List[Dict]:
         """Calculates SLA metrics in a vectorized way."""
         created_at = pd.to_datetime(df["created_at"], errors="coerce")
         first_response_at = pd.to_datetime(df["first_response_at"], errors="coerce")
@@ -27,8 +27,10 @@ class TransformeElasticService:
 
         metrics["first_response_sla_breached"] = (
             first_response_time > df["sla_first_response_mins"]
-        )
-        metrics["resolution_sla_breached"] = resolution_time > df["sla_resolution_mins"]
+        ).fillna(False)
+        metrics["resolution_sla_breached"] = (
+            resolution_time > df["sla_resolution_mins"]
+        ).fillna(False)
 
         return metrics.to_dict("records")
 
@@ -58,41 +60,30 @@ class TransformeElasticService:
             return []
 
         df = pd.DataFrame(tickets)
-        df["ticket_id_str"] = df["ticket_id"].astype(str)
+
+        sla_metrics_list = TransformeElasticService._calculate_sla_metrics(df)
+        search_text_series = TransformeElasticService._create_search_text(df)
 
         attachments_map = extracted_data.get("attachments", {})
         tags_map = extracted_data.get("tags", {})
         status_history_map = extracted_data.get("status_history", {})
         audit_logs_map = extracted_data.get("audit_logs", {})
 
-        df["sla_metrics"] = TransformeElasticService._calculate_sla_metrics(df)
-        df["search_text"] = TransformeElasticService._create_search_text(df)
-
-        for col in ["created_at", "first_response_at", "closed_at"]:
-            df[col] = (
-                pd.to_datetime(df[col], errors="coerce")
-                .dt.strftime("%Y-%m-%d %H:%M:%S")
-                .fillna(None)
-            )
-
-        def map_and_clean(series, mapping):
-            mapped_series = series.map(mapping)
-            return [d if isinstance(d, list) else [] for d in mapped_series]
-
-        df["attachments_list"] = map_and_clean(df["ticket_id_str"], attachments_map)
-        df["tags_list"] = map_and_clean(df["ticket_id_str"], tags_map)
-        df["status_history_list"] = map_and_clean(
-            df["ticket_id_str"], status_history_map
-        )
-        df["audit_logs_list"] = map_and_clean(df["ticket_id_str"], audit_logs_map)
-
-        docs = df.to_dict("records")
-
+        docs_to_process = df.to_dict("records")
         final_documents = []
-        for doc in docs:
+
+        for i, doc in enumerate(docs_to_process):
+            ticket_id_str = str(doc.get("ticket_id"))
+
+            created_at = pd.to_datetime(doc.get("created_at"), errors="coerce")
+            first_response_at = pd.to_datetime(
+                doc.get("first_response_at"), errors="coerce"
+            )
+            closed_at = pd.to_datetime(doc.get("closed_at"), errors="coerce")
+
             final_documents.append(
                 {
-                    "ticket_id": doc.get("ticket_id_str"),
+                    "ticket_id": ticket_id_str,
                     "title": doc.get("title"),
                     "description": doc.get("description"),
                     "channel": doc.get("channel"),
@@ -101,9 +92,21 @@ class TransformeElasticService:
                     "sla_plan": doc.get("sla_plan"),
                     "priority": doc.get("priority"),
                     "dates": {
-                        "created_at": doc.get("created_at"),
-                        "first_response_at": doc.get("first_response_at"),
-                        "closed_at": doc.get("closed_at"),
+                        "created_at": (
+                            None
+                            if pd.isna(created_at)
+                            else created_at.strftime("%Y-%m-%d %H:%M:%S")
+                        ),
+                        "first_response_at": (
+                            None
+                            if pd.isna(first_response_at)
+                            else first_response_at.strftime("%Y-%m-%d %H:%M:%S")
+                        ),
+                        "closed_at": (
+                            None
+                            if pd.isna(closed_at)
+                            else closed_at.strftime("%Y-%m-%d %H:%M:%S")
+                        ),
                     },
                     "company": {
                         "id": doc.get("company_id"),
@@ -139,12 +142,12 @@ class TransformeElasticService:
                         "id": doc.get("subcategory_id"),
                         "name": doc.get("subcategory_name"),
                     },
-                    "attachments": doc.get("attachments_list"),
-                    "tags": doc.get("tags_list"),
-                    "status_history": doc.get("status_history_list"),
-                    "audit_logs": doc.get("audit_logs_list"),
-                    "sla_metrics": doc.get("sla_metrics"),
-                    "search_text": doc.get("search_text"),
+                    "attachments": attachments_map.get(ticket_id_str, []),
+                    "tags": tags_map.get(ticket_id_str, []),
+                    "status_history": status_history_map.get(ticket_id_str, []),
+                    "audit_logs": audit_logs_map.get(ticket_id_str, []),
+                    "sla_metrics": sla_metrics_list[i],
+                    "search_text": search_text_series[i],
                 }
             )
 
