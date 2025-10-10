@@ -51,6 +51,16 @@ class TransformeElasticService:
         return df[text_fields].fillna("").agg(" ".join, axis=1)
 
     @staticmethod
+    def _format_date(date_obj):
+        """Helper function to safely format date objects."""
+        if pd.isna(date_obj):
+            return None
+        dt = pd.to_datetime(date_obj, errors="coerce")
+        if pd.isna(dt):
+            return None
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    @staticmethod
     def transform_tickets_batch(extracted_data: Dict) -> List[Dict]:
         """
         Transforms a batch of extracted tickets to Elasticsearch format using Pandas for high performance.
@@ -75,11 +85,23 @@ class TransformeElasticService:
         for i, doc in enumerate(docs_to_process):
             ticket_id_str = str(doc.get("ticket_id"))
 
-            created_at = pd.to_datetime(doc.get("created_at"), errors="coerce")
-            first_response_at = pd.to_datetime(
-                doc.get("first_response_at"), errors="coerce"
-            )
-            closed_at = pd.to_datetime(doc.get("closed_at"), errors="coerce")
+            status_history = status_history_map.get(ticket_id_str, [])
+            for item in status_history:
+                item["changed_at"] = TransformeElasticService._format_date(
+                    item.get("changed_at")
+                )
+
+            attachments = attachments_map.get(ticket_id_str, [])
+            for item in attachments:
+                item["uploaded_at"] = TransformeElasticService._format_date(
+                    item.get("uploaded_at")
+                )
+
+            audit_logs = audit_logs_map.get(ticket_id_str, [])
+            for item in audit_logs:
+                item["performed_at"] = TransformeElasticService._format_date(
+                    item.get("performed_at")
+                )
 
             final_documents.append(
                 {
@@ -92,20 +114,14 @@ class TransformeElasticService:
                     "sla_plan": doc.get("sla_plan"),
                     "priority": doc.get("priority"),
                     "dates": {
-                        "created_at": (
-                            None
-                            if pd.isna(created_at)
-                            else created_at.strftime("%Y-%m-%d %H:%M:%S")
+                        "created_at": TransformeElasticService._format_date(
+                            doc.get("created_at")
                         ),
-                        "first_response_at": (
-                            None
-                            if pd.isna(first_response_at)
-                            else first_response_at.strftime("%Y-%m-%d %H:%M:%S")
+                        "first_response_at": TransformeElasticService._format_date(
+                            doc.get("first_response_at")
                         ),
-                        "closed_at": (
-                            None
-                            if pd.isna(closed_at)
-                            else closed_at.strftime("%Y-%m-%d %H:%M:%S")
+                        "closed_at": TransformeElasticService._format_date(
+                            doc.get("closed_at")
                         ),
                     },
                     "company": {
@@ -142,10 +158,10 @@ class TransformeElasticService:
                         "id": doc.get("subcategory_id"),
                         "name": doc.get("subcategory_name"),
                     },
-                    "attachments": attachments_map.get(ticket_id_str, []),
+                    "attachments": attachments,
                     "tags": tags_map.get(ticket_id_str, []),
-                    "status_history": status_history_map.get(ticket_id_str, []),
-                    "audit_logs": audit_logs_map.get(ticket_id_str, []),
+                    "status_history": status_history,
+                    "audit_logs": audit_logs,
                     "sla_metrics": sla_metrics_list[i],
                     "search_text": search_text_series[i],
                 }
