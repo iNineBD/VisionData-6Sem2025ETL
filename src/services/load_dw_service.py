@@ -17,6 +17,12 @@ class LoadDwService:
     def load(self, transformed_data: Dict[str, pd.DataFrame]):
         dimension_mappings = [
             (
+                "Dim_Dates",
+                None,
+                None,
+                ["Year", "Month", "Day", "Hour", "Minute"],
+            ),
+            (
                 "Dim_Companies",
                 "CompanyId_BK",
                 "CompanyId_BK",
@@ -87,8 +93,13 @@ class LoadDwService:
         )
 
         try:
-            cols_to_insert = [business_key_col] + columns_to_update
-            df_dim = df[cols_to_insert].drop_duplicates()
+            if business_key_col is None:
+                df_dim = df.reset_index().rename(columns={"index": "DateKey"})
+                cols_to_insert = ["DateKey"] + columns_to_update
+                df_dim = df_dim[cols_to_insert].dropna()
+            else:
+                cols_to_insert = [business_key_col] + columns_to_update
+                df_dim = df[cols_to_insert].drop_duplicates()
 
             self.db.execute_query(
                 f"SELECT TOP 0 * INTO {temp_table_name} FROM {table_name}"
@@ -96,40 +107,70 @@ class LoadDwService:
 
             if not df_dim.empty:
                 df_prepared = df_dim.where(pd.notnull(df_dim), None)
-
                 cols_str = ", ".join([f"[{c}]" for c in df_prepared.columns])
                 placeholders = ", ".join(["?"] * len(df_prepared.columns))
                 insert_sql = f"INSERT INTO {temp_table_name} ({cols_str}) VALUES ({placeholders})"
 
+                self.db.cursor.fast_executemany = True
                 self.db.cursor.executemany(insert_sql, df_prepared.values.tolist())
                 self.db.connection.commit()
+                self.db.cursor.fast_executemany = False
 
-            logger.info("Starting MERGE operation from temporary table.")
-
-            update_clause = ""
-            if columns_to_update:
-                update_set = ", ".join(
-                    [f"Target.[{col}] = Source.[{col}]" for col in columns_to_update]
+            if business_key_col is None:
+                logger.info(
+                    f"Optimizing and loading data for {table_name} using EXCEPT..."
                 )
-                update_clause = f"WHEN MATCHED THEN UPDATE SET {update_set}"
 
-            insert_cols_list = [business_key_col] + columns_to_update
-            insert_cols = ", ".join([f"[{c}]" for c in insert_cols_list])
-            source_cols = ", ".join([f"Source.[{c}]" for c in insert_cols_list])
+                pk_cols = ", ".join([f"[{c}]" for c in columns_to_update])
+                index_name = f"IX_{temp_table_name.replace('#','')}_PK"
+                create_index_sql = f"CREATE CLUSTERED INDEX {index_name} ON {temp_table_name}({pk_cols});"
+                self.db.execute_query(create_index_sql)
 
-            merge_sql = f"""
-            MERGE {table_name} AS Target
-            USING {temp_table_name} AS Source
-            ON Target.[{business_key_col}] = Source.[{business_key_col}]
-            {update_clause}
-            WHEN NOT MATCHED BY Target THEN
-                INSERT ({insert_cols})
-                VALUES ({source_cols});
-            """
+                insert_cols_str = ", ".join([f"[{c}]" for c in cols_to_insert])
+                insert_except_sql = f"""
+                INSERT INTO {table_name} ({insert_cols_str})
+                SELECT {insert_cols_str} FROM {temp_table_name}
+                EXCEPT
+                SELECT {insert_cols_str} FROM {table_name};
+                """
+                self.db.execute_query(insert_except_sql)
+                logger.info(
+                    f"INSERT...EXCEPT operation for dimension {table_name} completed."
+                )
 
-            self.db.execute_query(merge_sql)
+            else:
+                logger.info(f"Optimizing and merging data for {table_name}...")
 
-            logger.info(f"MERGE operation for dimension {table_name} completed.")
+                index_name = f"IX_{temp_table_name.replace('#','')}"
+                create_index_sql = f"CREATE UNIQUE CLUSTERED INDEX {index_name} ON {temp_table_name}([{business_key_col}]);"
+                self.db.execute_query(create_index_sql)
+                logger.info(f"Index created on temporary table for {table_name}.")
+
+                update_clause = ""
+                if columns_to_update:
+                    update_set = ", ".join(
+                        [
+                            f"Target.[{col}] = Source.[{col}]"
+                            for col in columns_to_update
+                        ]
+                    )
+                    update_clause = f"WHEN MATCHED THEN UPDATE SET {update_set}"
+
+                insert_cols_list = [business_key_col] + columns_to_update
+                insert_cols = ", ".join([f"[{c}]" for c in insert_cols_list])
+                source_cols = ", ".join([f"Source.[{c}]" for c in insert_cols_list])
+
+                merge_sql = f"""
+                MERGE {table_name} AS Target
+                USING {temp_table_name} AS Source
+                ON Target.[{business_key_col}] = Source.[{business_key_col}]
+                {update_clause}
+                WHEN NOT MATCHED BY Target THEN
+                    INSERT ({insert_cols})
+                    VALUES ({source_cols});
+                """
+                self.db.execute_query(merge_sql)
+                logger.info(f"MERGE operation for dimension {table_name} completed.")
 
         except Exception as e:
             logger.error(
@@ -196,7 +237,6 @@ class LoadDwService:
                 if not keys_df.empty:
                     df_with_keys[bk_col_df] = df_with_keys[bk_col_df].astype(str)
                     keys_df[bk_col_db] = keys_df[bk_col_db].astype(str)
-
                     df_with_keys = pd.merge(
                         df_with_keys,
                         keys_df,
@@ -212,7 +252,6 @@ class LoadDwService:
 
             bk_cols_to_drop = [lkp[1] for lkp in lookups]
             df_with_keys.drop(columns=bk_cols_to_drop, inplace=True, errors="ignore")
-
             df_with_keys.dropna(subset=["TicketKey", "UserKey"], inplace=True)
 
             if df_with_keys.empty:
@@ -220,6 +259,7 @@ class LoadDwService:
                 return
 
             final_columns = [
+                "TicketKey",
                 "UserKey",
                 "AgentKey",
                 "CompanyKey",
@@ -229,19 +269,19 @@ class LoadDwService:
                 "ProductKey",
                 "TagKey",
                 "ChannelKey",
+                "EntryDateKey",
+                "ClosedDateKey",
+                "FirstResponseDateKey",
                 "QtTickets",
             ]
-            if "TicketKey" in df_with_keys.columns:
-                df_to_insert = df_with_keys[final_columns].copy()
-            else:
-                df_to_insert = df_with_keys[final_columns].copy()
+            df_to_insert = df_with_keys[
+                [col for col in final_columns if col in df_with_keys.columns]
+            ].copy()
 
             cols_with_types = []
             for col in df_to_insert.columns:
-                if "Key" in col:
-                    cols_with_types.append(f"[{col}] BIGINT")
-                else:
-                    cols_with_types.append(f"[{col}] INT")
+                dtype = "BIGINT" if "Key" in col else "INT"
+                cols_with_types.append(f"[{col}] {dtype}")
 
             create_temp_table_sql = (
                 f"CREATE TABLE {temp_fact_table} ({', '.join(cols_with_types)})"
@@ -249,60 +289,70 @@ class LoadDwService:
             self.db.execute_query(f"DROP TABLE IF EXISTS {temp_fact_table}")
             self.db.execute_query(create_temp_table_sql)
 
-            for col in final_columns:
-                if "Key" in col and col != "TicketKey":
-                    if col in df_to_insert.columns:
-                        df_to_insert[col] = df_to_insert[col].astype("Int64")
+            if not df_to_insert.empty:
+                logger.info(
+                    f"Starting optimized bulk insert of {len(df_to_insert)} records..."
+                )
 
-            def to_native(val):
-                if pd.isna(val):
-                    return None
-                if hasattr(val, "item"):
-                    return val.item()
-                return val
+                def to_native(val):
+                    if pd.isna(val):
+                        return None
+                    if hasattr(val, "item"):
+                        return val.item()
+                    return val
 
-            data_to_insert = [
-                [to_native(x) for x in row]
-                for row in df_to_insert.itertuples(index=False, name=None)
-            ]
+                data_to_insert = [
+                    tuple(to_native(x) for x in row)
+                    for row in df_to_insert.itertuples(index=False, name=None)
+                ]
+                cols_str = ", ".join([f"[{c}]" for c in df_to_insert.columns])
+                placeholders = ", ".join(["?"] * len(df_to_insert.columns))
+                insert_sql = f"INSERT INTO {temp_fact_table} ({cols_str}) VALUES ({placeholders})"
+
+                self.db.cursor.fast_executemany = True
+                self.db.cursor.executemany(insert_sql, data_to_insert)
+                self.db.connection.commit()
+                self.db.cursor.fast_executemany = False
+                logger.info("Bulk insert completed.")
+
+            logger.info("Optimizing temporary table for MERGE operation...")
+            index_name = f"IX_{temp_fact_table.replace('#','')}"
+            self.db.execute_query(
+                f"CREATE INDEX {index_name} ON {temp_fact_table}([TicketKey], [TagKey]);"
+            )
+            logger.info("Index created on temporary fact table.")
 
             cols_str = ", ".join([f"[{c}]" for c in df_to_insert.columns])
-            placeholders = ", ".join(["?"] * len(df_to_insert.columns))
-            insert_sql = (
-                f"INSERT INTO {temp_fact_table} ({cols_str}) VALUES ({placeholders})"
-            )
-
-            chunk_size = 1000
-            total_chunks = (len(data_to_insert) + chunk_size - 1) // chunk_size
-
-            logger.info(
-                f"Starting insertion of {len(data_to_insert)} records in {total_chunks} batches of {chunk_size}."
-            )
-
-            for i in range(0, len(data_to_insert), chunk_size):
-                chunk = data_to_insert[i : i + chunk_size]
-                self.db.cursor.executemany(insert_sql, chunk)
-                self.db.connection.commit()
-                logger.info(
-                    f"Batch {i // chunk_size + 1}/{total_chunks} loaded successfully."
-                )
+            source_cols_str = ", ".join([f"Source.[{c}]" for c in df_to_insert.columns])
+            merge_on_clause = """
+            (Target.[TicketKey] = Source.[TicketKey]) AND
+            (Target.[TagKey] = Source.[TagKey] OR (Target.[TagKey] IS NULL AND Source.[TagKey] IS NULL))
+            """
 
             merge_sql = f"""
             MERGE {fact_table} AS Target
             USING {temp_fact_table} AS Source
-                ON Target.[UserKey] = Source.[UserKey] AND Target.[TagKey] = Source.[TagKey]
+                ON {merge_on_clause}
             WHEN NOT MATCHED BY Target THEN
                 INSERT ({cols_str})
-                VALUES ({', '.join([f'Source.[{c}]' for c in df_to_insert.columns])});
+                VALUES ({source_cols_str});
             """
 
-            self.db.execute_query(merge_sql)
-            logger.info(f"MERGE operation for table {fact_table} completed.")
+            try:
+                logger.info(f"Enabling IDENTITY_INSERT for {fact_table}...")
+                self.db.execute_query(f"SET IDENTITY_INSERT {fact_table} ON;")
+
+                logger.info(f"Executing MERGE operation for fact table {fact_table}...")
+                self.db.execute_query(merge_sql)
+                logger.info(f"MERGE operation for fact table {fact_table} completed.")
+
+            finally:
+                logger.info(f"Disabling IDENTITY_INSERT for {fact_table}...")
+                self.db.execute_query(f"SET IDENTITY_INSERT {fact_table} OFF;")
 
         except Exception as e:
             logger.error(
-                f"Error during load of fact table {fact_table}: {e}",
-                exc_info=True,
+                f"Error during load of fact table {fact_table}: {e}", exc_info=True
             )
             raise
         finally:

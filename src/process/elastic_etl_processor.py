@@ -41,22 +41,21 @@ class ElasticEtlProcessor:
         logger.info("Data transformation completed")
 
     def load_data(self):
-        """Loads data into Elasticsearch"""
-        logger.info("Loading data into Elasticsearch")
+        """Loads data into Elasticsearch using the optimized bulk helper."""
+        logger.info("Loading data into Elasticsearch using bulk operation...")
 
         if not self.transformed_data:
             logger.error("No transformed data to load")
             return
 
-        # Loads each document
-        for document in self.transformed_data:
-            doc_id = document.get("ticket_id")
-            if doc_id:
-                self.elastic_client.upsert_document(doc_id=doc_id, data=document)
-            else:
-                logger.error("Document without ticket_id")
+        success_count, errors = self.elastic_client.bulk_upsert(self.transformed_data)
 
-        logger.info(f"Load completed: {len(self.transformed_data)} documents")
+        if errors:
+            logger.error(f"Load completed with {len(errors)} errors.")
+        else:
+            logger.info(
+                f"Load completed successfully: {success_count} documents processed."
+            )
 
     def execute(self):
         extracted = self.extract_data()

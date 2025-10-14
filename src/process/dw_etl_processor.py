@@ -25,7 +25,6 @@ class DwEtlProcessor:
         self.transform_service = TransformDwService()
 
         self.dw_db = DBConnector(db_name=dw_db)
-        self.dw_db.connect()
 
         self.load_service = LoadDwService(db_connection=self.dw_db)
 
@@ -47,6 +46,7 @@ class DwEtlProcessor:
     def load_data(self, transformed_data):
         """Loads data into the Data Warehouse"""
         logger.info("DW ETL: Loading data into the Data Warehouse")
+        self.dw_db.connect()
         if not transformed_data:
             logger.error("DW ETL: No transformed data to load")
             return
