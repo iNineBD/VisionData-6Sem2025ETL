@@ -166,22 +166,25 @@ INDEX_MAPPING = {
         }
     },
     "settings": {
+        "number_of_shards": 1,
+        "number_of_replicas": 1,
         "analysis": {
-            "filter": {
-                "brazilian_synonyms": {
-                    "type": "synonym",
-                    "synonyms_path": "analysis/synonyms.txt",
-                    "updateable": True,
+            "analyzer": {
+                "brazilian": {
+                    "tokenizer": "standard",
+                    "filter": [
+                        "lowercase",
+                        "brazilian_stop",
+                        "brazilian_stemmer",
+                        "asciifolding",
+                    ],
                 }
             },
-            "analyzer": {
-                "brazilian_with_synonyms": {
-                    "tokenizer": "standard",
-                    "filter": ["lowercase", "brazilian_stem", "brazilian_synonyms"],
-                }
+            "filter": {
+                "brazilian_stop": {"type": "stop", "stopwords": "_brazilian_"},
+                "brazilian_stemmer": {"type": "stemmer", "language": "brazilian"},
             },
         },
-        "index": {"number_of_shards": 1, "number_of_replicas": 1},
     },
 }
 

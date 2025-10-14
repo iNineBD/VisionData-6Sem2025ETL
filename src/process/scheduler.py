@@ -66,5 +66,5 @@ aspectlib.weave(DwEtlProcessor, log_execution)
 
 # Schedule for each time defined in the environment variable
 for horario in schedule_times:
-    # every().day.at(horario.strip()).do(run_sequential_etl_jobs)
-    every(20).seconds.do(run_sequential_etl_jobs)  # Example: schedule every 20 seconds
+    every().day.at(horario.strip()).do(run_sequential_etl_jobs)
+    # every(20).seconds.do(run_sequential_etl_jobs)  # Example: schedule every 20 seconds
