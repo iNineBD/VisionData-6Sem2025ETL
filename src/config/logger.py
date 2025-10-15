@@ -3,7 +3,8 @@ import logging
 import os
 from datetime import datetime
 from logging import StreamHandler
-from logging.handlers import RotatingFileHandler
+
+from config.elastic_client import ElasticClient
 
 
 class ConsoleFormatter(logging.Formatter):
@@ -25,11 +26,34 @@ class ConsoleFormatter(logging.Formatter):
         return json.dumps(log_dict, ensure_ascii=False)
 
 
+class ElasticDictFormatter(logging.Formatter):
+    """
+    Ensures that EACH log sent to Elasticsearch is a dictionary
+    with a consistent structure.
+    """
+
+    def format(self, record):
+        if isinstance(record.msg, dict):
+            return record.msg
+
+        iso_timestamp = datetime.fromtimestamp(record.created).isoformat()
+        log_dict = {
+            "function": record.funcName,
+            "action": "log_message",
+            "level": record.levelname,
+            "timestamp": iso_timestamp,
+            "message": record.getMessage(),
+        }
+        return log_dict
+
+
 def setup_logger(logger_name):
+
     logger = logging.getLogger(logger_name)
     logger.setLevel(os.getenv("LOGGER_LEVEL", "INFO"))
 
     console_formatter = ConsoleFormatter()
+    elastic_formatter = ElasticDictFormatter()
 
     if logger.hasHandlers():
         logger.handlers.clear()
@@ -37,18 +61,7 @@ def setup_logger(logger_name):
     logger_output = os.getenv("LOGGER_OUTPUT", "CONSOLE").split(",")
 
     if "FILE" in logger_output:
-        log_dir = os.path.join(os.getcwd(), "log")
-        os.makedirs(log_dir, exist_ok=True)
-        log_filename_base = os.getenv("LOGGER_FILE", "app.log")
-        file_name, file_extension = os.path.splitext(log_filename_base)
-        log_filename = (
-            f"{file_name}_{datetime.now().strftime('%Y-%m-%d')}{file_extension}"
-        )
-        log_path = os.path.join(log_dir, log_filename)
-
-        fh = RotatingFileHandler(
-            log_path, maxBytes=10 * 1024 * 1024, backupCount=500, encoding="utf-8"
-        )
+        fh = logging.FileHandler(os.getenv("LOGGER_FILE", "app.log"))
         fh.setFormatter(console_formatter)
         logger.addHandler(fh)
 
@@ -56,5 +69,10 @@ def setup_logger(logger_name):
         ch = StreamHandler()
         ch.setFormatter(console_formatter)
         logger.addHandler(ch)
+
+    if "ELASTIC" in logger_output:
+        eh = ElasticClient()
+        eh.setFormatter(elastic_formatter)
+        logger.addHandler(eh)
 
     return logger

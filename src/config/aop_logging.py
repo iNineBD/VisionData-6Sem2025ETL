@@ -13,7 +13,6 @@ logger = setup_logger(__name__)
 def log_execution(func, *args, **kwargs):
     function_name = func.__name__
 
-    # Start log with log level
     logger.info(
         {
             "function": function_name,
@@ -25,7 +24,6 @@ def log_execution(func, *args, **kwargs):
     try:
         result = yield aspectlib.Proceed(*args, **kwargs)
 
-        # End log with log level
         logger.info(
             {
                 "function": function_name,
@@ -36,7 +34,6 @@ def log_execution(func, *args, **kwargs):
         )
         return result
     except Exception as e:
-        # Exception log with all necessary details
         logger.error(
             {
                 "function": function_name,
@@ -45,7 +42,7 @@ def log_execution(func, *args, **kwargs):
                 "timestamp": datetime.now().isoformat(),
                 "exception_name": type(e).__name__,
                 "exception_message": str(e),
-                "message": f"Exception caught in function: {function_name}",
+                "message": f"Exceção capturada na função: {function_name}",
             }
         )
         raise
