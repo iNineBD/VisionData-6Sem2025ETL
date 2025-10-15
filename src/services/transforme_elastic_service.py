@@ -1,6 +1,7 @@
 from typing import Dict, List
 
 import aspectlib
+import numpy as np
 import pandas as pd
 
 from config.aop_logging import log_execution
@@ -10,7 +11,7 @@ class TransformeElasticService:
     """Service responsible for transforming ticket data to Elasticsearch format using optimized, vectorized operations."""
 
     @staticmethod
-    def _calculate_sla_metrics(df: pd.DataFrame) -> List[Dict]:
+    def _calculate_sla_metrics(df: pd.DataFrame) -> pd.Series:
         """Calculates SLA metrics in a vectorized way."""
         created_at = pd.to_datetime(df["created_at"], errors="coerce")
         first_response_at = pd.to_datetime(df["first_response_at"], errors="coerce")
@@ -24,7 +25,6 @@ class TransformeElasticService:
             int
         )
         metrics["resolution_time_minutes"] = resolution_time.fillna(0).astype(int)
-
         metrics["first_response_sla_breached"] = (
             first_response_time > df["sla_first_response_mins"]
         ).fillna(False)
@@ -47,18 +47,52 @@ class TransformeElasticService:
             "category_name",
             "subcategory_name",
         ]
-
         return df[text_fields].fillna("").agg(" ".join, axis=1)
 
     @staticmethod
-    def _format_date(date_obj):
-        """Helper function to safely format date objects."""
-        if pd.isna(date_obj):
-            return None
-        dt = pd.to_datetime(date_obj, errors="coerce")
-        if pd.isna(dt):
-            return None
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    def _format_date_series(series: pd.Series) -> pd.Series:
+        """Helper function to safely format a Series of date objects."""
+        dt_series = pd.to_datetime(series, errors="coerce")
+        return dt_series.dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    @staticmethod
+    def _process_nested_data(
+        df: pd.DataFrame, nested_map: Dict, col_name: str, date_col: str
+    ) -> pd.Series:
+        """
+        Efficiently processes and formats dates in nested data structures.
+        """
+        nested_series = df["ticket_id_str"].map(nested_map).fillna("").apply(list)
+
+        flat_list = []
+        for ticket_id, items in nested_series.items():
+            if items and isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        item_copy = item.copy()
+                        item_copy["ticket_id_str"] = df.loc[ticket_id, "ticket_id_str"]
+                        flat_list.append(item_copy)
+
+        if not flat_list:
+            return pd.Series([[]] * len(df), index=df.index, name=col_name)
+
+        nested_df = pd.DataFrame(flat_list)
+
+        if date_col in nested_df.columns:
+            nested_df[date_col] = TransformeElasticService._format_date_series(
+                nested_df[date_col]
+            )
+
+        nested_df = nested_df.replace({np.nan: None, pd.NaT: None})
+
+        grouped = nested_df.groupby("ticket_id_str").apply(
+            lambda x: x.drop(columns=["ticket_id_str"], errors="ignore").to_dict(
+                "records"
+            )
+        )
+        grouped.name = col_name
+
+        return grouped
 
     @staticmethod
     def transform_tickets_batch(extracted_data: Dict) -> List[Dict]:
@@ -70,100 +104,105 @@ class TransformeElasticService:
             return []
 
         df = pd.DataFrame(tickets)
+        df["ticket_id_str"] = df["ticket_id"].astype(str)
+        df = df.set_index("ticket_id_str", drop=False)
 
-        sla_metrics_list = TransformeElasticService._calculate_sla_metrics(df)
-        search_text_series = TransformeElasticService._create_search_text(df)
+        df["sla_metrics"] = TransformeElasticService._calculate_sla_metrics(df)
+        df["search_text"] = TransformeElasticService._create_search_text(df)
 
-        attachments_map = extracted_data.get("attachments", {})
-        tags_map = extracted_data.get("tags", {})
-        status_history_map = extracted_data.get("status_history", {})
-        audit_logs_map = extracted_data.get("audit_logs", {})
+        df["created_at_fmt"] = TransformeElasticService._format_date_series(
+            df["created_at"]
+        )
+        df["first_response_at_fmt"] = TransformeElasticService._format_date_series(
+            df["first_response_at"]
+        )
+        df["closed_at_fmt"] = TransformeElasticService._format_date_series(
+            df["closed_at"]
+        )
 
-        docs_to_process = df.to_dict("records")
+        status_history_series = TransformeElasticService._process_nested_data(
+            df, extracted_data.get("status_history", {}), "status_history", "changed_at"
+        )
+        attachments_series = TransformeElasticService._process_nested_data(
+            df, extracted_data.get("attachments", {}), "attachments", "uploaded_at"
+        )
+        audit_logs_series = TransformeElasticService._process_nested_data(
+            df, extracted_data.get("audit_logs", {}), "audit_logs", "performed_at"
+        )
+
+        df = df.join([status_history_series, attachments_series, audit_logs_series])
+        df["tags"] = (
+            df["ticket_id_str"]
+            .map(extracted_data.get("tags", {}))
+            .fillna("")
+            .apply(list)
+        )
+
+        for col in ["status_history", "attachments", "audit_logs", "tags"]:
+            if col not in df.columns:
+                df[col] = [[] for _ in range(len(df))]
+            else:
+                df[col] = df[col].apply(lambda d: d if isinstance(d, list) else [])
+
+        df = df.replace({np.nan: None, pd.NaT: None})
+
         final_documents = []
-
-        for i, doc in enumerate(docs_to_process):
-            ticket_id_str = str(doc.get("ticket_id"))
-
-            status_history = status_history_map.get(ticket_id_str, [])
-            for item in status_history:
-                item["changed_at"] = TransformeElasticService._format_date(
-                    item.get("changed_at")
-                )
-
-            attachments = attachments_map.get(ticket_id_str, [])
-            for item in attachments:
-                item["uploaded_at"] = TransformeElasticService._format_date(
-                    item.get("uploaded_at")
-                )
-
-            audit_logs = audit_logs_map.get(ticket_id_str, [])
-            for item in audit_logs:
-                item["performed_at"] = TransformeElasticService._format_date(
-                    item.get("performed_at")
-                )
-
+        for _, row in df.iterrows():
             final_documents.append(
                 {
-                    "ticket_id": ticket_id_str,
-                    "title": doc.get("title"),
-                    "description": doc.get("description"),
-                    "channel": doc.get("channel"),
-                    "device": doc.get("device"),
-                    "current_status": doc.get("current_status"),
-                    "sla_plan": doc.get("sla_plan"),
-                    "priority": doc.get("priority"),
+                    "ticket_id": row["ticket_id_str"],
+                    "title": row.get("title"),
+                    "description": row.get("description"),
+                    "channel": row.get("channel"),
+                    "device": row.get("device"),
+                    "current_status": row.get("current_status"),
+                    "sla_plan": row.get("sla_plan"),
+                    "priority": row.get("priority"),
                     "dates": {
-                        "created_at": TransformeElasticService._format_date(
-                            doc.get("created_at")
-                        ),
-                        "first_response_at": TransformeElasticService._format_date(
-                            doc.get("first_response_at")
-                        ),
-                        "closed_at": TransformeElasticService._format_date(
-                            doc.get("closed_at")
-                        ),
+                        "created_at": row["created_at_fmt"],
+                        "first_response_at": row["first_response_at_fmt"],
+                        "closed_at": row["closed_at_fmt"],
                     },
                     "company": {
-                        "id": doc.get("company_id"),
-                        "name": doc.get("company_name"),
-                        "cnpj": doc.get("company_cnpj"),
-                        "segment": doc.get("company_segment"),
+                        "id": row.get("company_id"),
+                        "name": row.get("company_name"),
+                        "cnpj": row.get("company_cnpj"),
+                        "segment": row.get("company_segment"),
                     },
                     "created_by_user": {
-                        "id": doc.get("user_id"),
-                        "full_name": doc.get("user_full_name"),
-                        "email": doc.get("user_email"),
-                        "phone": doc.get("user_phone"),
-                        "cpf": doc.get("user_cpf"),
-                        "is_vip": bool(doc.get("user_is_vip", False)),
+                        "id": row.get("user_id"),
+                        "full_name": row.get("user_full_name"),
+                        "email": row.get("user_email"),
+                        "phone": row.get("user_phone"),
+                        "cpf": row.get("user_cpf"),
+                        "is_vip": bool(row.get("user_is_vip", False)),
                     },
                     "assigned_agent": {
-                        "id": doc.get("agent_id"),
-                        "full_name": doc.get("agent_full_name"),
-                        "email": doc.get("agent_email"),
-                        "department": doc.get("agent_department"),
+                        "id": row.get("agent_id"),
+                        "full_name": row.get("agent_full_name"),
+                        "email": row.get("agent_email"),
+                        "department": row.get("agent_department"),
                     },
                     "product": {
-                        "id": doc.get("product_id"),
-                        "name": doc.get("product_name"),
-                        "code": doc.get("product_code"),
-                        "description": doc.get("product_description"),
+                        "id": row.get("product_id"),
+                        "name": row.get("product_name"),
+                        "code": row.get("product_code"),
+                        "description": row.get("product_description"),
                     },
                     "category": {
-                        "id": doc.get("category_id"),
-                        "name": doc.get("category_name"),
+                        "id": row.get("category_id"),
+                        "name": row.get("category_name"),
                     },
                     "subcategory": {
-                        "id": doc.get("subcategory_id"),
-                        "name": doc.get("subcategory_name"),
+                        "id": row.get("subcategory_id"),
+                        "name": row.get("subcategory_name"),
                     },
-                    "attachments": attachments,
-                    "tags": tags_map.get(ticket_id_str, []),
-                    "status_history": status_history,
-                    "audit_logs": audit_logs,
-                    "sla_metrics": sla_metrics_list[i],
-                    "search_text": search_text_series[i],
+                    "attachments": row.get("attachments", []),
+                    "tags": row.get("tags", []),
+                    "status_history": row.get("status_history", []),
+                    "audit_logs": row.get("audit_logs", []),
+                    "sla_metrics": row["sla_metrics"],
+                    "search_text": row["search_text"],
                 }
             )
 
