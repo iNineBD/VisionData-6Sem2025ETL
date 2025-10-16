@@ -1,11 +1,10 @@
+import logging
 import os
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 
-from .logger import setup_logger
-
-logger = setup_logger(__name__)
+from .singleton_conn_elastic import SingletonConnElastic
 
 INDEX_MAPPING = {
     "mappings": {
@@ -189,47 +188,52 @@ INDEX_MAPPING = {
 }
 
 
-class ElasticClient:
+class ElasticClient(logging.Handler, metaclass=SingletonConnElastic):
 
     def __init__(self):
         super().__init__()
+
+        self.internal_logger = logging.getLogger(__name__)
+        self.internal_logger.setLevel(logging.INFO)
+
         self.elastic_url = os.getenv("ELASTICSEARCH_URL")
         self.elastic_index = os.getenv("ELASTICSEARCH_INDEX")
+        self.log_index = os.getenv("ELASTICSEARCH_LOG_INDEX")
         self.elastic_user = os.getenv("ELASTICSEARCH_USER")
         self.elastic_password = os.getenv("ELASTICSEARCH_PASSWORD")
+
         self.es = Elasticsearch(
             self.elastic_url,
             basic_auth=(self.elastic_user, self.elastic_password),
             verify_certs=False,
             ssl_show_warn=False,
         )
-        self._ensure_index()
 
-    def _ensure_index(self):
+        self._ensure_etl_index()
+        self._checked_log_indices = set()
+
+    def _ensure_etl_index(self):
         if not self.elastic_index:
-            logger.error(
-                "[ElasticClient] Environment variable ELASTICSEARCH_INDEX not defined. Index will not be created."
+            self.internal_logger.error(
+                "Environment variable ELASTICSEARCH_INDEX not defined."
             )
             return
         if not self.es.indices.exists(index=self.elastic_index):
-            logger.info(
-                f"[ElasticClient] Index '{self.elastic_index}' does not exist. Creating..."
+            self.internal_logger.info(
+                f"ETL index '{self.elastic_index}' does not exist. Creating..."
             )
             self.es.indices.create(index=self.elastic_index, body=INDEX_MAPPING)
-        else:
-            logger.info(f"[ElasticClient] Index '{self.elastic_index}' already exists.")
 
     def bulk_upsert(self, documents):
         """
-        Performs a bulk 'upsert' operation using the Elasticsearch bulk helper.
+        ETL method. Sends data to the `elastic_index`.
         """
         actions = []
         for doc in documents:
             doc_id = doc.get("ticket_id")
             if not doc_id:
-                logger.warning(f"Document without ticket_id found, skipping: {doc}")
+                self.internal_logger.warning(f"Document without ticket_id found: {doc}")
                 continue
-
             action = {
                 "_op_type": "update",
                 "_index": self.elastic_index,
@@ -238,23 +242,42 @@ class ElasticClient:
                 "doc_as_upsert": True,
             }
             actions.append(action)
-
         if not actions:
-            logger.info("No actions to perform for bulk upsert.")
             return True, []
-
         try:
             success, errors = bulk(
                 self.es, actions, raise_on_error=False, raise_on_exception=False
             )
-            logger.info(
-                f"Bulk operation completed. Successes: {success}, Failures: {len(errors)}"
-            )
             if errors:
-                logger.error(f"Bulk upsert failures: {errors[:5]}")
+                self.internal_logger.error(f"Bulk upsert failures in ETL: {errors[:5]}")
             return success, errors
         except Exception as e:
-            logger.error(
-                f"An exception occurred during bulk upsert: {e}", exc_info=True
+            self.internal_logger.error(
+                f"Exception in ETL bulk upsert: {e}", exc_info=True
             )
             return False, [str(e)]
+
+    def emit(self, record):
+        """
+        Logger method. Sends data to the `log_index`.
+        """
+        if not self.log_index:
+            print(
+                "ERROR: Environment variable ELASTICSEARCH_LOG_INDEX not defined. Log will not be sent."
+            )
+            return
+
+        if self.log_index not in self._checked_log_indices:
+            if not self.es.indices.exists(index=self.log_index):
+                try:
+                    self.es.indices.create(index=self.log_index)
+                except Exception:
+                    pass
+            self._checked_log_indices.add(self.log_index)
+
+        try:
+            log_entry = self.format(record)
+            actions = [{"_index": self.log_index, "_source": log_entry}]
+            bulk(self.es, actions, raise_on_error=False, raise_on_exception=False)
+        except Exception as e:
+            print(f"ERROR: Exception when sending log to Elasticsearch: {e}")

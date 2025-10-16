@@ -10,8 +10,6 @@ logger = setup_logger(__name__)
 
 if __name__ == "__main__":
 
-    elastic_client = ElasticClient()
-
     # Main loop to run scheduled jobs
     while True:
         run_pending()
