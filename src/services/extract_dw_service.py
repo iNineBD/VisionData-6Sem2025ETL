@@ -78,6 +78,7 @@ class ExtractDwService:
             t.Channel as channel,
             t.Device as device,
             t.CurrentStatusId as current_status,
+            s.Name as status_name,
             t.SLAPlanId as sla_plan,
             t.PriorityId as priorityId,
             pe.Name as name,
@@ -119,6 +120,7 @@ class ExtractDwService:
             LEFT JOIN dbo.Departments d ON a.DepartmentId = d.DepartmentId
             LEFT JOIN dbo.Priorities pe ON pe.PriorityId = t.PriorityId
             LEFT JOIN dbo.Products p ON t.ProductId = p.ProductId
+            LEFT JOIN dbo.Statuses s ON t.CurrentStatusId = s.StatusId
             LEFT JOIN dbo.Categories cat ON t.CategoryId = cat.CategoryId
             LEFT JOIN dbo.Subcategories sub ON t.SubcategoryId = sub.SubcategoryId
             LEFT JOIN dbo.SLA_Plans sla ON t.SLAPlanId = sla.SLAPlanId

@@ -145,9 +145,11 @@ class TransformDwService:
         return dim.drop_duplicates(subset=["CategoryId_BK"]).reset_index(drop=True)
 
     def _create_dim_status(self, df: pd.DataFrame) -> pd.DataFrame:
-        dim = df[["current_status"]].copy()
-        dim.rename(columns={"current_status": "StatusId_BK"}, inplace=True)
-        dim["Name"] = "Status_" + dim["StatusId_BK"].astype(str)
+        dim = df[["current_status", "status_name"]].copy()
+        dim.rename(
+            columns={"current_status": "StatusId_BK", "status_name": "Name"},
+            inplace=True,
+        )
         return dim.drop_duplicates(subset=["StatusId_BK"]).reset_index(drop=True)
 
     def _create_dim_priorities(self, df: pd.DataFrame) -> pd.DataFrame:
