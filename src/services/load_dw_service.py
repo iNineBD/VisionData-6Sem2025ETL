@@ -121,15 +121,15 @@ class LoadDwService:
                     f"Optimizing and loading data for {table_name} using EXCEPT..."
                 )
 
-                pk_cols = ", ".join([f"[{c}]" for c in columns_to_update])
+                pk_cols = [f"[{c}]" for c in columns_to_update]
                 index_name = f"IX_{temp_table_name.replace('#','')}_PK"
-                create_index_sql = f"CREATE CLUSTERED INDEX {index_name} ON {temp_table_name}({pk_cols});"
+                create_index_sql = f"CREATE CLUSTERED INDEX {index_name} ON {temp_table_name}({', '.join(pk_cols)});"
                 self.db.execute_query(create_index_sql)
 
-                insert_cols_str = ", ".join([f"[{c}]" for c in cols_to_insert])
+                insert_cols_str = ", ".join(pk_cols)
                 insert_except_sql = f"""
                 INSERT INTO {table_name} ({insert_cols_str})
-                SELECT {insert_cols_str} FROM {temp_table_name}
+                SELECT DISTINCT {insert_cols_str} FROM {temp_table_name}
                 EXCEPT
                 SELECT {insert_cols_str} FROM {table_name};
                 """
