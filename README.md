@@ -23,9 +23,9 @@ VisionData-6Sem2025ETL/
 ├── setup.py                        # setuptools script to build/install the package (wheel/sdist)
 ├── sonar-project.properties        # SonarCloud/SonarQube configuration (project key, sources, coverage path)
 ├── Dockerfile                      # Docker container configuration
-├── docker-compose.yml             # Docker Compose orchestration file
-├── .env                            # Environment variables (production)
-├── .env.example                    # Environment variables template
+├── docker-compose.yml              # Docker Compose orchestration file
+├── production.env                  # Environment variables for production
+├── .env.example                    # Environment variables template for development/local
 └── src/                            # Source code root (package directory)
     ├── config/                     # Configuration loaders and env handling (YAML/JSON, env vars)
     ├── entities/                   # Domain models, dataclasses and schemas
@@ -47,7 +47,42 @@ pip install -r requirements.txt
 Python version required: >=3.11
 
 ## Environment Variables
+### Environment Files
 
+- For production, use a file named **production.env** in the project root with your environment variables.
+- For development/local, use the file **.env.example** as a template to create your own `.env` file.
+
+**Important:** Do not put real or sensitive values in .env.example. The production.env file should be used only in production and contain your actual configuration.
+
+#### Environment variable keys:
+
+```dotenv
+# ETL
+AUTOMATION_NAME
+
+# LOGGER PARAMS
+LOGGER_LEVEL
+LOGGER_FILE
+LOGGER_OUTPUT
+
+# ELASTICSEARCH PARAMS
+ELASTICSEARCH_URL
+ELASTICSEARCH_LOG_INDEX
+ELASTICSEARCH_INDEX
+ELASTICSEARCH_USER
+ELASTICSEARCH_PASSWORD
+
+# DATABASE PARAMS
+CLIENT_DB_NAME
+DW_DB_NAME
+DB_HOST
+DB_USER
+DB_PASSWORD
+DB_PORT
+
+# SCHEDULING
+SCHEDULE_TIME
+```
 ### About .env Files
 
 The project uses environment configuration files:
