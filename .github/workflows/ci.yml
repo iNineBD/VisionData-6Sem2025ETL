@@ -117,11 +117,10 @@ jobs:
           python-version: '3.11'
 
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@v6
         with:
           args: >
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.sources=src
         env:
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
